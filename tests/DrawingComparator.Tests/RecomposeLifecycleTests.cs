@@ -40,8 +40,12 @@ public class RecomposeLifecycleTests
     private static MainViewModel MakeVm(GatedCompositor compositor)
     {
         var pdfService = new PdfDocumentService();
-        return new MainViewModel(pdfService, compositor, new ExportService(compositor, pdfService),
+        var vm = new MainViewModel(pdfService, compositor, new ExportService(compositor, pdfService),
             new StubDialogs(), new StubRecents());
+        // Sans document, RequestRecompose ne compose plus (état vide sombre, design-review n°2) :
+        // ces tests exercent la MACHINERIE de composition, on simule un document présent.
+        vm.HasAnyDocument = true;
+        return vm;
     }
 
     [Fact]
@@ -49,7 +53,8 @@ public class RecomposeLifecycleTests
     {
         var compositor = new GatedCompositor();
         var vm = MakeVm(compositor);
-        vm.SetViewportSize(new SKSizeI(8, 8)); // déclenche la compose n°1
+        vm.SetViewportSize(new SKSizeI(8, 8));
+        vm.RequestRecompose(); // déclenche la compose n°1
 
         // Trois demandes pendant que la boucle tourne : une seule compose supplémentaire.
         vm.RequestRecompose();
@@ -65,7 +70,8 @@ public class RecomposeLifecycleTests
     {
         var compositor = new GatedCompositor { Gate = new SemaphoreSlim(0) };
         var vm = MakeVm(compositor);
-        vm.SetViewportSize(new SKSizeI(8, 8)); // compose bloquée sur le Gate
+        vm.SetViewportSize(new SKSizeI(8, 8));
+        vm.RequestRecompose(); // compose bloquée sur le Gate
 
         var image = MakeImage();
         vm.RetireBitmap(image);
@@ -110,9 +116,13 @@ public class RecomposeLifecycleTests
         var compositor = new ThrowingCompositor();
         var pdfService = new PdfDocumentService();
         var vm = new MainViewModel(pdfService, compositor,
-            new ExportService(compositor, pdfService), new StubDialogs(), new StubRecents());
+            new ExportService(compositor, pdfService), new StubDialogs(), new StubRecents())
+        {
+            HasAnyDocument = true,
+        };
 
         vm.SetViewportSize(new SKSizeI(8, 8));
+        vm.RequestRecompose();
         await (vm.CurrentRecompose ?? Task.CompletedTask);
 
         Assert.StartsWith("Rendu impossible", vm.StatusMessage);

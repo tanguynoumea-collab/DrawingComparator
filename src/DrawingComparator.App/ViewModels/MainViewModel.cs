@@ -341,6 +341,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // Les setters des initialiseurs de calques notifient avant la fin du constructeur.
         if (BaseLayer is null || RevisionLayer is null)
             return;
+        // ClearFile passe aussi par ici : l'état « aucun document » doit se recalculer (design-review n°2).
+        HasAnyDocument = BaseLayer.HasFile || RevisionLayer.HasFile;
+        StartAlignmentCommand.NotifyCanExecuteChanged();
+        ExportCommand.NotifyCanExecuteChanged();
+        SaveProjectCommand.NotifyCanExecuteChanged();
+        SaveProjectAsCommand.NotifyCanExecuteChanged();
         EmptyPageBannerDismissed = false;
         OnPropertyChanged(nameof(EmptyPageMessage));
         UpdatePagesText();
@@ -925,6 +931,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (ViewportSize.Width <= 0 || ViewportSize.Height <= 0)
             return;
+        // Sans document, pas de feuille : le canvas garde son fond sombre (état vide du
+        // DESIGN_PLAN §3 — un composite blanc rendrait la liste Reprendre illisible).
+        if (!HasAnyDocument)
+        {
+            CompositeBitmap = null;
+            return;
+        }
         ScheduleDetailRender();
         if (_composeRunning)
         {

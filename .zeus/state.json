@@ -3,7 +3,7 @@
   "projet": "DrawingComparator",
   "version_courante": "0.1.0",
   "route": "full",
-  "phase": "GSD",
+  "phase": "DEV-COUNCIL",
   "phase_status": "en_cours",
   "cycle": {
     "numero": 2,
@@ -28,7 +28,7 @@
     "mode_daedalus": "EVOLUTION"
   },
   "iterations": {
-    "design_review": 0,
+    "design_review": 1,
     "design_review_max": 3,
     "dev_council": 0,
     "dev_council_max": 3
@@ -70,6 +70,8 @@
     "2026-08-13 — Ouverture cycle 2 sur demande explicite : TOUS les points de docs/ROADMAP.md (14 items). OneDrive 00_ROADMAP vérifié : aucun fichier DrawingComparator, docs/ROADMAP.md est la source. Route FULL, DAEDALUS mode ÉVOLUTION. ✅ ROADMAP → LLM-COUNCIL",
     "2026-08-13 — LLM-Council cycle 2 (5 membres + 5 relecteurs aveugles avec vérification sur pièces) : Rigoriste 1er unanime. Fait pivot : PDFtoImage 5.3.0 expose Bounds/DpiRelativeToBounds (rapport cycle 1 périmé sur ce point, pas de migration de binding). Architecture bi-raster + export tuilé, 5 vagues V0-V4, 7b affine en opt-in explicite. Rapport .zeus/reports/llm-council-cycle2-2026-08-13.md. ✅ LLM-COUNCIL → UX-DESIGN",
     "2026-08-13 — DAEDALUS mode ÉVOLUTION : delta v1.1 rédigé dans docs/DESIGN_PLAN.md §11 (projets/Reprendre, bloc AJUSTER, scrim XAML, étape 5 + affine opt-in, snackbar export, binarisation ◐, bandeau page vide, indicateur netteté, light au démarrage). Auto-critiqué. ⏸ ATTENTE CHECKPOINT 1 : validation humaine du plan",
-    "2026-08-13 — ✅ CHECKPOINT 1 : delta v1.1 validé par l'utilisateur (« valide »). Plan contractuel. ✅ UX-DESIGN → GSD (mode dégradé : .zeus/tasks.md cycle 2, vagues V0-V4)"
+    "2026-08-13 — ✅ CHECKPOINT 1 : delta v1.1 validé par l'utilisateur (« valide »). Plan contractuel. ✅ UX-DESIGN → GSD (mode dégradé : .zeus/tasks.md cycle 2, vagues V0-V4)",
+    "2026-08-13 — GSD cycle 2 : 27 tâches C01-C27 done, DoD 100 % cochée. ✅ GATE TESTS : build 0 warning, format OK, 69/69 tests (dont spike région sur vrais PDF, export tuilé, affine, projets). Log .zeus/reports/gate-cycle2-2026-08-13.log. Commit unique cycle 2. ✅ → DESIGN-REVIEW",
+    "2026-08-13 — DESIGN-REVIEW n°2 (captures réelles via --screenshot, Reprendre seedé) : 1 BLOQUANT (composite blanc sans document → Reprendre illisible) corrigé en boucle courte (itération design_review 1/3) + bug HasAnyDocument/ClearFile attrapé ; re-gate 69/69, re-capture conforme ; 2 mineurs → roadmap ; états non-capturables consignés pour l'UAT. Rapport .zeus/reports/design-review-2.md, baseline docs/ui-baseline/cycle2/. ✅ → DEV-COUNCIL"
   ]
 }

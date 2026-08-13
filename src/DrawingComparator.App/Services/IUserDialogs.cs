@@ -22,6 +22,12 @@ public interface IUserDialogs
     /// </summary>
     string? RelocateMissingFile(string missingPath);
 
+    /// <summary>
+    /// Le .dcproj référence un chemin réseau (UNC) : confirmation explicite avant toute
+    /// résolution SMB (SEC2-01 — un projet reçu de tiers ne sonde jamais le réseau en silence).
+    /// </summary>
+    Task<bool> ConfirmOpenNetworkPathAsync(string path);
+
     /// <summary>Dialogue d'export (résolution + zone) puis choix du fichier de sortie. Null si annulé.</summary>
     ExportRequest? ShowExportDialog();
 

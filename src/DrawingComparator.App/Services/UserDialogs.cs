@@ -57,6 +57,20 @@ public sealed class UserDialogs : IUserDialogs
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
+    public async Task<bool> ConfirmOpenNetworkPathAsync(string path)
+    {
+        var box = new Wpf.Ui.Controls.MessageBox
+        {
+            Title = "Chemin réseau dans le projet",
+            Content = $"Ce projet référence un emplacement réseau :\n{path}\n\n" +
+                      "S'y connecter enverra vos identifiants Windows à ce serveur. " +
+                      "Ne continuez que si vous connaissez ce partage.",
+            PrimaryButtonText = "Se connecter",
+            CloseButtonText = "Ne pas s'y connecter",
+        };
+        return await box.ShowDialogAsync() == Wpf.Ui.Controls.MessageBoxResult.Primary;
+    }
+
     public string? RelocateMissingFile(string missingPath)
     {
         var dialog = new OpenFileDialog

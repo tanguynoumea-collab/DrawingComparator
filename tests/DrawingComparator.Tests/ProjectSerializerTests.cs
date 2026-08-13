@@ -114,4 +114,108 @@ public class ProjectSerializerTests
             () => ProjectSerializer.Load(Path.Combine(Path.GetTempPath(), "dc-inexistant.dcproj")));
         Assert.Contains("Impossible de lire", ex.Message);
     }
+
+    // ── Corrections dev-council n°2 (DON2-01/02, SEC2-02) ────────────────────
+
+    [Fact]
+    public void Save_OverExisting_IsAtomic_NoTmpLeftBehind()
+    {
+        string path = TempProject();
+        try
+        {
+            ProjectSerializer.Save(path, SampleProject());
+            var updated = new ComparisonProject
+            {
+                Base = new ProjectLayer(@"C:\plans\autre.pdf", 1, 50),
+                Revision = new ProjectLayer(@"C:\plans\rev2.pdf", 4, 100),
+            };
+            ProjectSerializer.Save(path, updated);
+
+            var loaded = ProjectSerializer.Load(path);
+            Assert.Equal(updated.Base, loaded.Base);
+            Assert.False(File.Exists(path + ".tmp"), "le fichier temporaire doit avoir été remplacé");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Save_NonFiniteMatrix_Fails_WithoutTouchingExistingFile()
+    {
+        // DON2-01/02 : la sérialisation échoue EN MÉMOIRE (ArgumentException sur NaN),
+        // le .dcproj existant reste intact octet pour octet.
+        string path = TempProject();
+        try
+        {
+            ProjectSerializer.Save(path, SampleProject());
+            byte[] before = File.ReadAllBytes(path);
+
+            var poisoned = new ComparisonProject
+            {
+                Base = new ProjectLayer("a.pdf", 1, 100),
+                Revision = new ProjectLayer("b.pdf", 1, 100),
+                Align = new ProjectMatrix(float.NaN, 0, 0, 0, 1, 0),
+            };
+            Assert.ThrowsAny<ArgumentException>(() => ProjectSerializer.Save(path, poisoned));
+
+            Assert.Equal(before, File.ReadAllBytes(path));
+            Assert.False(File.Exists(path + ".tmp"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Load_InfinityViaOverflow_IsRejectedWithUserMessage()
+    {
+        // SEC2-02 prouvé au témoin : System.Text.Json accepte 1e999 → Infinity en silence.
+        // La validation de frontière doit le refuser AVANT qu'il n'atteigne la géométrie.
+        string path = TempProject();
+        try
+        {
+            File.WriteAllText(path, """
+                {
+                  "SchemaVersion": 1,
+                  "Base": { "FilePath": "a.pdf", "Page": 1, "OpacityPercent": 100 },
+                  "Revision": { "FilePath": "b.pdf", "Page": 1, "OpacityPercent": 100 },
+                  "Align": { "ScaleX": 1e999, "SkewX": 0, "TransX": 0, "SkewY": 0, "ScaleY": 1, "TransY": 0 }
+                }
+                """);
+            var ex = Assert.Throws<ProjectLoadException>(() => ProjectSerializer.Load(path));
+            Assert.Contains("matrice de calage invalide", ex.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Load_ClampsHostileValues()
+    {
+        string path = TempProject();
+        try
+        {
+            File.WriteAllText(path, """
+                {
+                  "SchemaVersion": 1,
+                  "Base": { "FilePath": "a.pdf", "Page": 0, "OpacityPercent": 500 },
+                  "Revision": { "FilePath": "b.pdf", "Page": -3, "OpacityPercent": -10 }
+                }
+                """);
+            var loaded = ProjectSerializer.Load(path);
+            Assert.Equal(100, loaded.Base.OpacityPercent);
+            Assert.Equal(0, loaded.Revision.OpacityPercent);
+            Assert.Equal(1, loaded.Base.Page);
+            Assert.Equal(1, loaded.Revision.Page);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

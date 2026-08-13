@@ -64,10 +64,35 @@ public static class ProjectSerializer
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
     };
 
+    /// <summary>
+    /// Écriture ATOMIQUE (DON2-01) : sérialisation en mémoire d'abord — un état float
+    /// pathologique échoue AVANT de toucher le disque (DON2-02) — puis fichier temporaire
+    /// et remplacement ; un crash ou une IOException mi-écriture ne peut jamais tronquer
+    /// le .dcproj existant.
+    /// </summary>
     public static void Save(string path, ComparisonProject project)
     {
-        using var stream = File.Create(path);
-        JsonSerializer.Serialize(stream, project, Options);
+        byte[] payload = JsonSerializer.SerializeToUtf8Bytes(project, Options);
+
+        string tmp = path + ".tmp";
+        File.WriteAllBytes(tmp, payload);
+        if (File.Exists(path))
+        {
+            try
+            {
+                File.Replace(tmp, path, destinationBackupFileName: null);
+            }
+            catch (PlatformNotSupportedException)
+            {
+                // Certains partages réseau refusent Replace : Move-écrase est le repli
+                // le moins pire (fenêtre de vulnérabilité réduite au rename).
+                File.Move(tmp, path, overwrite: true);
+            }
+        }
+        else
+        {
+            File.Move(tmp, path);
+        }
     }
 
     public static ComparisonProject Load(string path)
@@ -81,7 +106,11 @@ public static class ProjectSerializer
             if (project.SchemaVersion > ComparisonProject.CurrentSchemaVersion)
                 throw new ProjectLoadException(
                     $"« {name} » a été créé par une version plus récente de DrawingComparator (schéma {project.SchemaVersion}). Mettez l'application à jour.");
-            return project;
+            return Validate(project, name);
+        }
+        catch (ProjectLoadException)
+        {
+            throw;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -91,5 +120,43 @@ public static class ProjectSerializer
         {
             throw new ProjectLoadException($"« {name} » n'est pas un fichier projet DrawingComparator valide.", ex);
         }
+        catch (Exception ex)
+        {
+            // Frontière de confiance : AUCUNE exception d'un fichier tiers ne doit dépasser
+            // le message « projet invalide » (SEC2-02 — un .dcproj hostile n'atteint pas le
+            // filet de crash générique).
+            throw new ProjectLoadException($"« {name} » n'est pas un fichier projet DrawingComparator valide.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Validation sémantique à la frontière (cross-challenge Sécurité↔Données) : System.Text.Json
+    /// accepte silencieusement 1e999 → Infinity ; une matrice non finie produirait une géométrie
+    /// muette (TryInvert en échec, canvas blanc). Les opacités sont clampées par symétrie avec
+    /// les pages (clampées côté ouverture, faute de connaître PageCount ici).
+    /// </summary>
+    private static ComparisonProject Validate(ComparisonProject project, string name)
+    {
+        var m = project.Align;
+        ReadOnlySpan<float> terms = [m.ScaleX, m.SkewX, m.TransX, m.SkewY, m.ScaleY, m.TransY];
+        foreach (float t in terms)
+        {
+            if (!float.IsFinite(t))
+                throw new ProjectLoadException($"« {name} » contient une matrice de calage invalide (valeur non finie).");
+        }
+
+        static ProjectLayer Clamp(ProjectLayer layer) => layer with
+        {
+            OpacityPercent = Math.Clamp(layer.OpacityPercent, 0, 100),
+            Page = Math.Max(1, layer.Page),
+        };
+        return new ComparisonProject
+        {
+            SchemaVersion = project.SchemaVersion,
+            Base = Clamp(project.Base),
+            Revision = Clamp(project.Revision),
+            Align = project.Align,
+            TintsSwapped = project.TintsSwapped,
+        };
     }
 }

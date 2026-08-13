@@ -11,21 +11,6 @@ using SkiaSharp;
 
 namespace DrawingComparator.App.ViewModels;
 
-/// <summary>Étapes de l'outil de calage (DESIGN_PLAN §3 « mode calage », §11.4 point de contrôle).</summary>
-public enum AlignmentStep
-{
-    Inactive,
-    Point1OnRevision,
-    Point1OnBase,
-    Point2OnRevision,
-    Point2OnBase,
-
-    /// <summary>Calage appliqué, bandeau encore ouvert : point de contrôle facultatif ou Terminer.</summary>
-    Aligned,
-    ControlOnRevision,
-    ControlOnBase,
-}
-
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private const float FitMarginPx = 24f;
@@ -45,28 +30,36 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly IExportService _exportService;
     private readonly IUserDialogs _dialogs;
     private readonly IRecentProjectsService _recents;
+    private readonly IProjectStore _projectStore;
 
     private readonly List<SKImage> _retiredBitmaps = [];
     private int _composersInFlight;
     private bool _composeRunning;
     private bool _composeDirty;
 
-    // Points de calage capturés, dans le repère PDF de leur plan respectif.
-    private SKPoint _p1, _q1, _p2, _q2, _p3, _q3;
-    private bool _hasControlPoint;
-    private SKMatrix _alignBeforeSession = SKMatrix.Identity;
-    private SKMatrix _alignAfterAnchor = SKMatrix.Identity;
-
     private CancellationTokenSource? _detailCts;
     private CancellationTokenSource? _snackbarCts;
 
     public MainViewModel(IPdfDocumentService pdfService, IComparisonCompositor compositor,
-        IExportService exportService, IUserDialogs dialogs, IRecentProjectsService recents)
+        IExportService exportService, IUserDialogs dialogs, IRecentProjectsService recents,
+        IProjectStore projectStore)
     {
         _compositor = compositor;
         _exportService = exportService;
         _dialogs = dialogs;
         _recents = recents;
+        _projectStore = projectStore;
+
+        Alignment = new AlignmentSession(RequestRecompose);
+        // La session porte ses propres notifications ; la façade les relaie au XAML tels quels
+        // (mêmes noms de propriétés) — le shell ne peut plus muter ses invariants (ARC2-01).
+        Alignment.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is not null)
+                OnPropertyChanged(e.PropertyName);
+            if (e.PropertyName == nameof(AlignmentSession.AlignmentStep))
+                StartAlignmentCommand.NotifyCanExecuteChanged();
+        };
 
         BaseLayer = new LayerViewModel(isBase: true, pdfService, OnLayerErrorAsync, OnLayerChanged, RetireBitmap)
         {
@@ -77,9 +70,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Tint = LayerTint.Blue,
         };
     }
-
-    partial void OnAlignmentStepChanged(AlignmentStep value)
-        => StartAlignmentCommand.NotifyCanExecuteChanged();
 
     [RelayCommand]
     private async Task OpenBaseAsync()
@@ -98,8 +88,80 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public LayerViewModel BaseLayer { get; }
     public LayerViewModel RevisionLayer { get; }
 
+    // ── Calage : la machine vit dans AlignmentSession, la façade re-expose ────
+
+    public AlignmentSession Alignment { get; }
+
     /// <summary>Matrice de calage : points PDF du plan révisé → points PDF du plan de base. 3×2 générale.</summary>
-    public SKMatrix AlignMatrix { get; private set; } = SKMatrix.Identity;
+    public SKMatrix AlignMatrix => Alignment.Matrix;
+
+    public AlignmentStep AlignmentStep => Alignment.AlignmentStep;
+    public bool IsAligning => Alignment.IsAligning;
+    public bool IsPosingPoint => Alignment.IsPosingPoint;
+    public bool IsAlignmentCommitted => Alignment.IsAlignmentCommitted;
+    public string Step1Glyph => Alignment.Step1Glyph;
+    public string Step2Glyph => Alignment.Step2Glyph;
+    public string Step3Glyph => Alignment.Step3Glyph;
+    public string Step4Glyph => Alignment.Step4Glyph;
+    public string StepInstruction => Alignment.StepInstruction;
+    public string? AlignmentInlineError => Alignment.AlignmentInlineError;
+    public string? AlignmentSummary => Alignment.AlignmentSummary;
+    public bool HasAlignment => Alignment.HasAlignment;
+    public double? ResidualMm => Alignment.ResidualMm;
+    public string? ResidualText => Alignment.ResidualText;
+    public bool HasControlPointForDisplay => Alignment.HasControlPointForDisplay;
+    public bool CanUseAffine => Alignment.CanUseAffine;
+    public string? AnisotropyWarning => Alignment.AnisotropyWarning;
+    public bool CanNudge => Alignment.CanNudge;
+
+    /// <summary>Liaison TwoWay du segmented Rigide/Affine.</summary>
+    public bool IsAffineMode
+    {
+        get => Alignment.IsAffineMode;
+        set => Alignment.IsAffineMode = value;
+    }
+
+    /// <summary>Liaison TwoWay du pas d'ajustement (0,1 / 0,5 / 2 mm).</summary>
+    public double NudgeStepMm
+    {
+        get => Alignment.NudgeStepMm;
+        set => Alignment.NudgeStepMm = value;
+    }
+
+    public void NudgeRevision(int dxSteps, int dySteps, double? overrideStepMm = null)
+        => Alignment.Nudge(dxSteps, dySteps, overrideStepMm);
+
+    private bool CanStartAlignment() => BaseLayer.Raster is not null && RevisionLayer.Raster is not null && !IsAligning;
+
+    [RelayCommand(CanExecute = nameof(CanStartAlignment))]
+    private void StartAlignment() => Alignment.Start();
+
+    [RelayCommand]
+    private void CancelAlignment() => Alignment.Cancel();
+
+    [RelayCommand]
+    private void FinishAlignment() => Alignment.Finish();
+
+    [RelayCommand]
+    private void AddControlPoint() => Alignment.AddControlPoint();
+
+    [RelayCommand]
+    private void UndoAlignmentPoint() => Alignment.Undo();
+
+    [RelayCommand]
+    private void ResetAlignment() => Alignment.Reset();
+
+    /// <summary>Traite un clic gauche en mode calage (pixels écran). Retourne false hors mode calage.</summary>
+    public bool HandleAlignmentClick(SKPoint screenPoint)
+    {
+        if (!Alignment.IsAligning)
+            return false;
+        if (!ViewMatrix.TryInvert(out var viewInverse))
+            return true;
+        return Alignment.HandleClick(viewInverse.MapPoint(screenPoint));
+    }
+
+    // ── Vue ───────────────────────────────────────────────────────────────────
 
     /// <summary>Matrice de vue : points PDF du plan de base → pixels du viewport.</summary>
     public SKMatrix ViewMatrix { get; private set; } = SKMatrix.CreateScale(ScreenPxPerPdfPoint, ScreenPxPerPdfPoint);
@@ -128,107 +190,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _hasAnyDocument;
 
-    // ── Calage ────────────────────────────────────────────────────────────────
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAligning), nameof(IsPosingPoint), nameof(IsAlignmentCommitted),
-        nameof(StepInstruction), nameof(Step1Glyph), nameof(Step2Glyph), nameof(Step3Glyph), nameof(Step4Glyph))]
-    private AlignmentStep _alignmentStep = AlignmentStep.Inactive;
-
-    public bool IsAligning => AlignmentStep != AlignmentStep.Inactive;
-
-    /// <summary>Un clic est attendu sur le canvas (scrim 60 % actif, item 4 — pas en état « Aligned »).</summary>
-    public bool IsPosingPoint => AlignmentStep is AlignmentStep.Point1OnRevision or AlignmentStep.Point1OnBase
-        or AlignmentStep.Point2OnRevision or AlignmentStep.Point2OnBase
-        or AlignmentStep.ControlOnRevision or AlignmentStep.ControlOnBase;
-
-    /// <summary>Le calage est appliqué, le bandeau propose le point de contrôle et Terminer (§11.4).</summary>
-    public bool IsAlignmentCommitted => AlignmentStep == AlignmentStep.Aligned;
-
-    public string Step1Glyph => StepGlyph(1, AlignmentStep.Point1OnRevision, "Point du RÉVISÉ");
-    public string Step2Glyph => StepGlyph(2, AlignmentStep.Point1OnBase, "Même point sur la BASE");
-    public string Step3Glyph => StepGlyph(3, AlignmentStep.Point2OnRevision, "Second point du RÉVISÉ");
-    public string Step4Glyph => StepGlyph(4, AlignmentStep.Point2OnBase, "Même point sur la BASE");
-
-    private string StepGlyph(int number, AlignmentStep stepOfChip, string label)
-    {
-        int currentIndex = (int)AlignmentStep;
-        int chipIndex = (int)stepOfChip;
-        string glyph = currentIndex > chipIndex ? "●" : currentIndex == chipIndex ? "◉" : "○";
-        return $"{glyph} {number} {label}";
-    }
-
-    public string StepInstruction => AlignmentStep switch
-    {
-        AlignmentStep.Point1OnRevision => "Cliquez un point de référence sur le plan RÉVISÉ (ex. un angle de mur)",
-        AlignmentStep.Point1OnBase => "Cliquez le même point sur le plan de BASE — il servira d'ancrage",
-        AlignmentStep.Point2OnRevision => "Cliquez un second point sur le plan RÉVISÉ, loin du premier (ex. le bout du mur)",
-        AlignmentStep.Point2OnBase => "Cliquez le même point sur le plan de BASE — il fixe l'échelle et la rotation",
-        AlignmentStep.Aligned => "Calage appliqué — posez un point de contrôle pour mesurer l'erreur, ou terminez",
-        AlignmentStep.ControlOnRevision => "Cliquez un point de VÉRIFICATION sur le plan RÉVISÉ, loin des deux premiers",
-        AlignmentStep.ControlOnBase => "Cliquez le même point sur le plan de BASE — l'écart mesuré s'affichera",
-        _ => string.Empty,
-    };
-
-    [ObservableProperty]
-    private string? _alignmentInlineError;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasAlignment))]
-    private string? _alignmentSummary;
-
-    public bool HasAlignment => AlignmentSummary is not null;
-
-    /// <summary>Erreur résiduelle du point de contrôle, en mm papier de la base (null tant qu'aucun contrôle).</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ResidualText))]
-    private double? _residualMm;
-
-    public string? ResidualText => ResidualMm is { } r ? $"résiduel {r:0.00} mm" : null;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanUseAffine))]
-    private bool _hasControlPointForDisplay;
-
-    public bool CanUseAffine => HasControlPointForDisplay;
-
-    /// <summary>Mode affine 3 points : opt-in explicite, jamais de bascule silencieuse (SEN-01).</summary>
-    [ObservableProperty]
-    private bool _isAffineMode;
-
-    partial void OnIsAffineModeChanged(bool value) => RecomputeFromPairs();
-
-    /// <summary>Avertissement d'anisotropie (mode affine) — une information métier, pas une erreur.</summary>
-    [ObservableProperty]
-    private string? _anisotropyWarning;
-
-    // ── Ajustement fin au clavier (item 3) ────────────────────────────────────
-
-    /// <summary>Pas de translation des flèches, en millimètres papier de la BASE (0,1 / 0,5 / 2).</summary>
-    [ObservableProperty]
-    private double _nudgeStepMm = 0.5;
-
-    public static IReadOnlyList<double> NudgeStepChoices { get; } = [0.1, 0.5, 2.0];
-
-    public bool CanNudge => HasAlignment && !IsPosingPoint;
-
-    /// <summary>
-    /// Translate le plan RÉVISÉ de (dx, dy) pas dans le repère de la BASE — composition à gauche
-    /// par une translation pure : l'échelle et la rotation du calage sont intactes.
-    /// Le pas effectif peut être forcé par Maj (pas fin) / Ctrl (pas large).
-    /// </summary>
-    public void NudgeRevision(int dxSteps, int dySteps, double? overrideStepMm = null)
-    {
-        if (!CanNudge)
-            return;
-        double mm = overrideStepMm ?? NudgeStepMm;
-        float pt = (float)(mm * 72.0 / 25.4);
-        AlignMatrix = SKMatrix.CreateTranslation(dxSteps * pt, dySteps * pt).PreConcat(AlignMatrix);
-        UpdateResidual();
-        UpdateAlignmentSummary();
-        RequestRecompose();
-    }
-
     // ── Snackbar (item 5) ─────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -256,7 +217,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(6), ct);
-            SnackbarMessage = null;
+            if (!ct.IsCancellationRequested)
+                SnackbarMessage = null;
         }
         catch (OperationCanceledException)
         {
@@ -422,128 +384,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CursorPositionText = $"x {doc.X * 25.4f / 72f,7:0.0}  y {doc.Y * 25.4f / 72f,7:0.0} mm";
     }
 
-    // ── Commandes barre d'outils ──────────────────────────────────────────────
-
-    private bool CanStartAlignment() => BaseLayer.Raster is not null && RevisionLayer.Raster is not null && !IsAligning;
-
-    [RelayCommand(CanExecute = nameof(CanStartAlignment))]
-    private void StartAlignment()
-    {
-        _alignBeforeSession = AlignMatrix;
-        _hasControlPoint = false;
-        HasControlPointForDisplay = false;
-        ResidualMm = null;
-        IsAffineMode = false;
-        AnisotropyWarning = null;
-        AlignmentInlineError = null;
-        AlignmentStep = AlignmentStep.Point1OnRevision;
-        RequestRecompose();
-    }
-
-    [RelayCommand]
-    private void CancelAlignment()
-    {
-        if (!IsAligning)
-            return;
-        if (AlignmentStep == AlignmentStep.Aligned)
-        {
-            // Le calage est déjà appliqué : Échap referme simplement le bandeau.
-            FinishAlignment();
-            return;
-        }
-        AlignMatrix = _alignBeforeSession;
-        AlignmentStep = AlignmentStep.Inactive;
-        AlignmentInlineError = null;
-        _hasControlPoint = false;
-        HasControlPointForDisplay = false;
-        ResidualMm = null;
-        UpdateAlignmentSummary();
-        RequestRecompose();
-    }
-
-    /// <summary>Ferme le bandeau de calage en conservant le résultat (bouton Terminer, §11.4).</summary>
-    [RelayCommand]
-    private void FinishAlignment()
-    {
-        if (AlignmentStep != AlignmentStep.Aligned)
-            return;
-        AlignmentStep = AlignmentStep.Inactive;
-        AlignmentInlineError = null;
-        RequestRecompose();
-    }
-
-    /// <summary>Ouvre la pose du couple de contrôle facultatif (étape 5, §11.4).</summary>
-    [RelayCommand]
-    private void AddControlPoint()
-    {
-        if (AlignmentStep != AlignmentStep.Aligned)
-            return;
-        AlignmentInlineError = null;
-        AlignmentStep = AlignmentStep.ControlOnRevision;
-    }
-
-    /// <summary>Retour arrière : re-poser le point précédent.</summary>
-    [RelayCommand]
-    private void UndoAlignmentPoint()
-    {
-        AlignmentInlineError = null;
-        switch (AlignmentStep)
-        {
-            case AlignmentStep.Point1OnBase:
-                AlignmentStep = AlignmentStep.Point1OnRevision;
-                break;
-            case AlignmentStep.Point2OnRevision:
-                // L'ancrage (translation) avait été appliqué : on le retire.
-                AlignMatrix = _alignBeforeSession;
-                AlignmentStep = AlignmentStep.Point1OnBase;
-                RequestRecompose();
-                break;
-            case AlignmentStep.Point2OnBase:
-                AlignmentStep = AlignmentStep.Point2OnRevision;
-                break;
-            case AlignmentStep.Aligned:
-                if (_hasControlPoint)
-                {
-                    // Retirer le contrôle (et le mode affine qui s'appuyait dessus).
-                    _hasControlPoint = false;
-                    HasControlPointForDisplay = false;
-                    ResidualMm = null;
-                    if (IsAffineMode)
-                        IsAffineMode = false; // recompose en rigide via OnIsAffineModeChanged
-                    break;
-                }
-                // Re-poser le second couple : revenir à l'état ancré.
-                AlignMatrix = _alignAfterAnchor;
-                AlignmentStep = AlignmentStep.Point2OnBase;
-                UpdateAlignmentSummary();
-                RequestRecompose();
-                break;
-            case AlignmentStep.ControlOnRevision:
-                AlignmentStep = AlignmentStep.Aligned;
-                break;
-            case AlignmentStep.ControlOnBase:
-                AlignmentStep = AlignmentStep.ControlOnRevision;
-                break;
-        }
-    }
-
     [RelayCommand]
     private void SwapTints()
     {
         (BaseLayer.Tint, RevisionLayer.Tint) = (RevisionLayer.Tint, BaseLayer.Tint);
-    }
-
-    [RelayCommand]
-    private void ResetAlignment()
-    {
-        AlignMatrix = SKMatrix.Identity;
-        _hasControlPoint = false;
-        HasControlPointForDisplay = false;
-        ResidualMm = null;
-        IsAffineMode = false;
-        AnisotropyWarning = null;
-        UpdateAlignmentSummary();
-        RequestRecompose();
     }
 
     // ── Export (items 5 + 9 + SEN-11) ─────────────────────────────────────────
@@ -654,13 +498,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 Align = ProjectMatrix.FromMatrix(AlignMatrix),
                 TintsSwapped = BaseLayer.Tint == LayerTint.Blue,
             };
-            ProjectSerializer.Save(path, project);
+            _projectStore.Save(path, project);
             CurrentProjectPath = path;
             TouchRecents(path);
             ShowSnackbar($"Projet enregistré → {Path.GetFileName(path)}", path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
+            // ArgumentException : état float pathologique refusé par la sérialisation — AVANT
+            // d'avoir touché le fichier (DON2-02, écriture atomique DON2-01).
             ShowSnackbar($"Enregistrement impossible : {ex.Message} Réessayez vers un autre dossier.", danger: true);
         }
     }
@@ -682,7 +528,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public async Task OpenProjectAsync(string path)
     {
-        if (!File.Exists(path))
+        if (!_projectStore.FileExists(path))
         {
             _recents.Remove(path);
             OnPropertyChanged(nameof(RecentProjects));
@@ -695,7 +541,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ComparisonProject project;
         try
         {
-            project = ProjectSerializer.Load(path);
+            project = _projectStore.Load(path);
         }
         catch (ProjectLoadException ex)
         {
@@ -703,10 +549,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // Chemins re-validés : repli « à côté du .dcproj », puis dialogue de relocalisation.
-        if (ResolveProjectFile(project.Base.FilePath, path) is not { } basePath)
+        // Chemins re-validés : repli local « à côté du .dcproj » d'abord, confirmation
+        // explicite avant toute résolution réseau (SEC2-01), relocalisation en dernier.
+        if (await ResolveProjectFileAsync(project.Base.FilePath, path) is not { } basePath)
             return;
-        if (ResolveProjectFile(project.Revision.FilePath, path) is not { } revPath)
+        if (await ResolveProjectFileAsync(project.Revision.FilePath, path) is not { } revPath)
             return;
 
         BaseLayer.Tint = project.TintsSwapped ? LayerTint.Blue : LayerTint.Red;
@@ -724,12 +571,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         BaseLayer.Binarize = project.Base.Binarize;
         RevisionLayer.Binarize = project.Revision.Binarize;
 
-        AlignMatrix = project.Align.ToMatrix();
-        _hasControlPoint = false;
-        HasControlPointForDisplay = false;
-        ResidualMm = null;
-        IsAffineMode = false;
-        UpdateAlignmentSummary();
+        Alignment.ApplyLoadedMatrix(project.Align.ToMatrix());
         FitToWindow();
         RequestRecompose();
 
@@ -737,13 +579,27 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         TouchRecents(path);
     }
 
-    private string? ResolveProjectFile(string storedPath, string projectPath)
+    private async Task<string?> ResolveProjectFileAsync(string storedPath, string projectPath)
     {
-        if (File.Exists(storedPath))
-            return storedPath;
         string sibling = Path.Combine(Path.GetDirectoryName(projectPath) ?? "", Path.GetFileName(storedPath));
-        if (File.Exists(sibling))
+        bool nonLocal = _projectStore.IsNonLocalPath(storedPath);
+
+        if (!nonLocal && _projectStore.FileExists(storedPath))
+            return storedPath;
+
+        // Repli local AVANT toute sonde réseau : un .dcproj hostile ne déclenche
+        // jamais de résolution SMB silencieuse (SEC2-01).
+        if (_projectStore.FileExists(sibling))
             return sibling;
+
+        if (nonLocal)
+        {
+            if (!await _dialogs.ConfirmOpenNetworkPathAsync(storedPath))
+                return _dialogs.RelocateMissingFile(storedPath);
+            if (_projectStore.FileExists(storedPath))
+                return storedPath;
+        }
+
         return _dialogs.RelocateMissingFile(storedPath);
     }
 
@@ -753,144 +609,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             BaseLayer.FileName ?? "?", RevisionLayer.FileName ?? "?", DateTime.Now));
         OnPropertyChanged(nameof(RecentProjects));
         OnPropertyChanged(nameof(HasRecentProjects));
-    }
-
-    // ── Clics de calage (appelés par ComparatorView) ──────────────────────────
-
-    /// <summary>Traite un clic gauche en mode calage. Retourne false hors mode calage.</summary>
-    public bool HandleAlignmentClick(SKPoint screenPoint)
-    {
-        if (!IsAligning)
-            return false;
-        if (!ViewMatrix.TryInvert(out var viewInverse))
-            return true;
-
-        var basePoint = viewInverse.MapPoint(screenPoint);
-        AlignmentInlineError = null;
-
-        switch (AlignmentStep)
-        {
-            case AlignmentStep.Point1OnRevision:
-                _p1 = MapBaseToRevision(basePoint);
-                AlignmentStep = AlignmentStep.Point1OnBase;
-                break;
-
-            case AlignmentStep.Point1OnBase:
-                _q1 = basePoint;
-                // Ancrage immédiat : le plan révisé vient se poser sur le point cible,
-                // ce qui facilite le choix du second couple de points.
-                AlignMatrix = AlignmentMath.ComputeAnchorTranslation(
-                    AlignMatrix.MapPoint(_p1), _q1).PreConcat(AlignMatrix);
-                _alignAfterAnchor = AlignMatrix;
-                AlignmentStep = AlignmentStep.Point2OnRevision;
-                RequestRecompose();
-                break;
-
-            case AlignmentStep.Point2OnRevision:
-                _p2 = MapBaseToRevision(basePoint);
-                AlignmentStep = AlignmentStep.Point2OnBase;
-                break;
-
-            case AlignmentStep.Point2OnBase:
-                try
-                {
-                    _q2 = basePoint;
-                    AlignMatrix = AlignmentMath.ComputeSimilarity(_p1, _q1, _p2, _q2);
-                    AlignmentStep = AlignmentStep.Aligned;
-                    UpdateAlignmentSummary();
-                    RequestRecompose();
-                }
-                catch (DegenerateAlignmentException ex)
-                {
-                    AlignmentInlineError = $"{ex.Message} Choisissez un point plus éloigné.";
-                }
-                break;
-
-            case AlignmentStep.ControlOnRevision:
-                _p3 = MapBaseToRevision(basePoint);
-                AlignmentStep = AlignmentStep.ControlOnBase;
-                break;
-
-            case AlignmentStep.ControlOnBase:
-                _q3 = basePoint;
-                _hasControlPoint = true;
-                HasControlPointForDisplay = true;
-                AlignmentStep = AlignmentStep.Aligned;
-                if (IsAffineMode)
-                    RecomputeFromPairs();
-                UpdateResidual();
-                break;
-
-            case AlignmentStep.Aligned:
-                break; // aucun point attendu : le bandeau attend Terminer ou + Point de contrôle
-        }
-        return true;
-    }
-
-    /// <summary>Point du repère base → repère propre du plan révisé (via l'inverse du calage courant).</summary>
-    private SKPoint MapBaseToRevision(SKPoint basePoint)
-        => AlignMatrix.TryInvert(out var inv) ? inv.MapPoint(basePoint) : basePoint;
-
-    /// <summary>
-    /// Recalcule la matrice depuis les couples posés, selon le mode (SEN-01 : le choix
-    /// rigide/affine est TOUJOURS celui de l'utilisateur, jamais un repli).
-    /// </summary>
-    private void RecomputeFromPairs()
-    {
-        if (!HasAlignment && AlignmentStep == AlignmentStep.Inactive)
-            return;
-        try
-        {
-            if (IsAffineMode)
-            {
-                if (!_hasControlPoint)
-                    return; // le segmented est désactivé sans 3e couple ; garde-fou
-                AlignMatrix = AlignmentMath.ComputeAffine(_p1, _q1, _p2, _q2, _p3, _q3);
-            }
-            else if (_hasControlPoint || AlignmentStep is AlignmentStep.Aligned or AlignmentStep.Inactive)
-            {
-                AlignMatrix = AlignmentMath.ComputeSimilarity(_p1, _q1, _p2, _q2);
-            }
-            UpdateResidual();
-            UpdateAlignmentSummary();
-            RequestRecompose();
-        }
-        catch (DegenerateAlignmentException ex)
-        {
-            AlignmentInlineError = $"{ex.Message}";
-            if (IsAffineMode)
-                IsAffineMode = false;
-        }
-    }
-
-    private void UpdateResidual()
-        => ResidualMm = _hasControlPoint ? AlignmentMath.ResidualMm(AlignMatrix, _p3, _q3) : null;
-
-    private void UpdateAlignmentSummary()
-    {
-        if (AlignMatrix == SKMatrix.Identity)
-        {
-            AlignmentSummary = null;
-            AnisotropyWarning = null;
-            SaveProjectCommand.NotifyCanExecuteChanged();
-            return;
-        }
-
-        if (IsAffineMode)
-        {
-            var (sx, sy, rotation, shear) = AlignmentMath.DecomposeAffine(AlignMatrix);
-            AlignmentSummary =
-                $"é_x ={sx,7:0.0000}  é_y ={sy,7:0.0000}\nrotation ={rotation,7:+0.00;-0.00}°  cis. ={shear,7:0.0000}";
-            AnisotropyWarning = Math.Abs(sx / sy - 1.0) > 0.002
-                ? "Échelles X/Y différentes : l'affine déforme le plan révisé."
-                : null;
-        }
-        else
-        {
-            var (scale, rotation) = AlignmentMath.Decompose(AlignMatrix);
-            AlignmentSummary = $"échelle ={scale,7:0.0000}\nrotation ={rotation,7:+0.00;-0.00}°";
-            AnisotropyWarning = null;
-        }
     }
 
     // ── Composition ───────────────────────────────────────────────────────────
@@ -974,12 +692,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 }
                 try
                 {
-                    CompositeBitmap = SkiaInterop.ToWriteableBitmap(bitmap, CompositeBitmap, DisplayScale);
+                    // Une itération partie AVANT que l'état vide reprenne la main ne doit pas
+                    // faire réapparaître un composite fantôme (dev-council n°2, FIA2-04).
+                    if (HasAnyDocument)
+                        CompositeBitmap = SkiaInterop.ToWriteableBitmap(bitmap, CompositeBitmap, DisplayScale);
                 }
                 finally
                 {
                     bitmap.Dispose();
                 }
+                if (!HasAnyDocument)
+                    break;
                 ComposedViewMatrix = view;
                 CompositeUpdated?.Invoke();
             }
@@ -1043,6 +766,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         catch (PdfLoadException ex)
         {
             // SEN-04 : l'overview reste affiché, l'échec de netteté s'annonce sans dialogue.
+            StatusMessage = $"Netteté indisponible : {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            // Filet terminal (FIA2-02) : la tâche est fire-and-forget — aucune exception
+            // (OOM de tuile, SKException…) ne doit devenir une exception non observée muette.
             StatusMessage = $"Netteté indisponible : {ex.Message}";
         }
         finally

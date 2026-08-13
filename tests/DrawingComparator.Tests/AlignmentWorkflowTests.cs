@@ -43,7 +43,8 @@ public class AlignmentWorkflowTests
         var pdfService = new PdfDocumentService();
         var compositor = new ComparisonCompositor();
         var vm = new MainViewModel(pdfService, compositor,
-            new ExportService(compositor, pdfService), dialogs, new StubRecents());
+            new ExportService(compositor, pdfService), dialogs, new StubRecents(),
+            new DrawingComparator.App.Services.ProjectStore());
 
         await vm.LoadIntoLayerAsync(vm.BaseLayer, SampleBase);
         await vm.LoadIntoLayerAsync(vm.RevisionLayer, SampleRevision);

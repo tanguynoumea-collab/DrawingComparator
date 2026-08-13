@@ -51,15 +51,30 @@ jobs:
             8.0.x
             10.0.x
 
+      # Garde PKG2-01 : le tag doit correspondre à la Version MSBuild — jamais un exe
+      # estampillé N sous un tag N+1. Le tag passe par une variable d'environnement,
+      # jamais interpolé dans le script (SEC2-06).
+      - name: Garde version = tag
+        shell: powershell
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $expected = $env:TAG -replace '^v', ''
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          if ("$version".Trim() -ne $expected) {
+            throw "Directory.Build.props Version=$version ne correspond pas au tag $env:TAG"
+          }
+
       - name: Publish (exe single-file + SHA-256)
         run: powershell -File scripts/publish.ps1
 
       - name: Zip de release
-        run: |
-          $tag = "${{ github.ref_name }}"
-          Compress-Archive -Path publish\DrawingComparator.App.exe, publish\SHA256SUMS.txt `
-            -DestinationPath "DrawingComparator-$tag-win-x64.zip"
         shell: powershell
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          Compress-Archive -Path publish\DrawingComparator.App.exe, publish\SHA256SUMS.txt `
+            -DestinationPath "DrawingComparator-$env:TAG-win-x64.zip"
 
       - uses: actions/upload-artifact@v4
         with:

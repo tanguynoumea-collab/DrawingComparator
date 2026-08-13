@@ -41,7 +41,7 @@ public class RecomposeLifecycleTests
     {
         var pdfService = new PdfDocumentService();
         var vm = new MainViewModel(pdfService, compositor, new ExportService(compositor, pdfService),
-            new StubDialogs(), new StubRecents());
+            new StubDialogs(), new StubRecents(), new DrawingComparator.App.Services.ProjectStore());
         // Sans document, RequestRecompose ne compose plus (état vide sombre, design-review n°2) :
         // ces tests exercent la MACHINERIE de composition, on simule un document présent.
         vm.HasAnyDocument = true;
@@ -116,7 +116,8 @@ public class RecomposeLifecycleTests
         var compositor = new ThrowingCompositor();
         var pdfService = new PdfDocumentService();
         var vm = new MainViewModel(pdfService, compositor,
-            new ExportService(compositor, pdfService), new StubDialogs(), new StubRecents())
+            new ExportService(compositor, pdfService), new StubDialogs(), new StubRecents(),
+            new DrawingComparator.App.Services.ProjectStore())
         {
             HasAnyDocument = true,
         };

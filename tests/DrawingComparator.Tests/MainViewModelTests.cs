@@ -20,7 +20,8 @@ public class MainViewModelTests
         var compositor = new ComparisonCompositor();
         var dialogs = new StubDialogs();
         var recents = new StubRecents();
-        var vm = new MainViewModel(pdf, compositor, new ExportService(compositor, pdf), dialogs, recents);
+        var vm = new MainViewModel(pdf, compositor, new ExportService(compositor, pdf), dialogs, recents,
+            new DrawingComparator.App.Services.ProjectStore());
         return (vm, pdf, dialogs, recents);
     }
 
@@ -173,8 +174,10 @@ public class MainViewModelTests
     // ── Projets : aller-retour complet au niveau VM ───────────────────────────
 
     [Fact]
-    public async Task SaveThenOpenProject_RestoresFullState()
+    public async Task SaveFromVm_ThenOpenInFreshVm_RestoresFullState()
     {
+        // TST2-01 : le round-trip passe par le VRAI chemin d'écriture du VM
+        // (SaveProjectCommand → mapping état → IProjectStore), pas par un DTO construit à la main.
         string dir = Directory.CreateTempSubdirectory("dc-proj").FullName;
         string basePdf = Path.Combine(dir, "base.pdf");
         string revPdf = Path.Combine(dir, "rev.pdf");
@@ -184,14 +187,22 @@ public class MainViewModelTests
 
         try
         {
-            var project = new ComparisonProject
-            {
-                Base = new ProjectLayer(basePdf, 2, 70, false),
-                Revision = new ProjectLayer(revPdf, 1, 100, true),
-                Align = ProjectMatrix.FromMatrix(SKMatrix.CreateRotationDegrees(1.5f, 10, 20)),
-                TintsSwapped = true,
-            };
-            ProjectSerializer.Save(projectPath, project);
+            var (vm, _, dialogs, recents) = MakeVm();
+            await vm.LoadIntoLayerAsync(vm.BaseLayer, basePdf);
+            await vm.LoadIntoLayerAsync(vm.RevisionLayer, revPdf);
+            vm.BaseLayer.SelectedPage = 2;
+            vm.BaseLayer.OpacityPercent = 70;
+            vm.RevisionLayer.Binarize = true;
+            vm.SwapTintsCommand.Execute(null);
+
+            dialogs.NextProjectSavePath = projectPath;
+            await vm.SaveProjectAsCommand.ExecuteAsync(null);
+
+            Assert.True(File.Exists(projectPath));
+            Assert.Equal(projectPath, vm.CurrentProjectPath);
+            Assert.NotNull(vm.SnackbarMessage);
+            Assert.False(vm.SnackbarIsDanger);
+            Assert.Single(recents.Items);
 
             var (vm2, _, dialogs2, recents2) = MakeVm();
             await vm2.OpenProjectAsync(projectPath);
@@ -202,12 +213,65 @@ public class MainViewModelTests
             Assert.Equal(2, vm2.BaseLayer.SelectedPage);
             Assert.Equal(70, vm2.BaseLayer.OpacityPercent);
             Assert.True(vm2.RevisionLayer.Binarize);
+            // TintsSwapped : la permutation survit au round-trip complet.
             Assert.Equal(LayerTint.Blue, vm2.BaseLayer.Tint);
             Assert.Equal(LayerTint.Red, vm2.RevisionLayer.Tint);
-            Assert.Equal(project.Align.ToMatrix(), vm2.AlignMatrix);
-            Assert.True(vm2.HasAlignment);
             Assert.Equal(projectPath, vm2.CurrentProjectPath);
             Assert.Single(recents2.Items);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveProject_IoFailure_ShowsDangerSnackbar_KeepsRunning()
+    {
+        var (vm, _, dialogs, _) = MakeVm();
+        string dir = Directory.CreateTempSubdirectory("dc-proj").FullName;
+        string basePdf = Path.Combine(dir, "base.pdf");
+        File.WriteAllText(basePdf, "fake");
+        try
+        {
+            await vm.LoadIntoLayerAsync(vm.BaseLayer, basePdf);
+            await vm.LoadIntoLayerAsync(vm.RevisionLayer, basePdf);
+            // Dossier inexistant → IOException dans le store.
+            dialogs.NextProjectSavePath = Path.Combine(dir, "absent", "x.dcproj");
+            await vm.SaveProjectAsCommand.ExecuteAsync(null);
+
+            Assert.NotNull(vm.SnackbarMessage);
+            Assert.True(vm.SnackbarIsDanger);
+            Assert.Null(vm.CurrentProjectPath);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OpenProject_UncPathWithoutSibling_AsksConfirmation_DeniedAborts()
+    {
+        // SEC2-01 : sans repli local, un chemin réseau exige une confirmation explicite ;
+        // refus → relocalisation proposée → annulée → ouverture abandonnée, AUCUNE sonde UNC.
+        var (vm, _, dialogs, _) = MakeVm();
+        string dir = Directory.CreateTempSubdirectory("dc-proj").FullName;
+        string projectPath = Path.Combine(dir, "chantier.dcproj");
+        try
+        {
+            ProjectSerializer.Save(projectPath, new ComparisonProject
+            {
+                Base = new ProjectLayer(@"\\serveur-inconnu\plans\base.pdf", 1, 100),
+                Revision = new ProjectLayer(@"\\serveur-inconnu\plans\rev.pdf", 1, 100),
+            });
+
+            await vm.OpenProjectAsync(projectPath);
+
+            Assert.Equal(1, dialogs.NetworkConfirmCalls);
+            Assert.Equal(1, dialogs.RelocateCalls);
+            Assert.False(vm.BaseLayer.HasFile);
+            Assert.Null(vm.CurrentProjectPath);
         }
         finally
         {
@@ -241,6 +305,8 @@ public class MainViewModelTests
             Assert.Empty(dialogs.Errors);
             Assert.Equal(siblingBase, vm.BaseLayer.FilePath);
             Assert.Equal(siblingRev, vm.RevisionLayer.FilePath);
+            // Le repli local a précédé toute résolution réseau : aucune confirmation demandée (SEC2-01).
+            Assert.Equal(0, dialogs.NetworkConfirmCalls);
         }
         finally
         {

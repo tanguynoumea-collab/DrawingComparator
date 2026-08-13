@@ -3,8 +3,8 @@
   "projet": "DrawingComparator",
   "version_courante": "0.1.0",
   "route": "full",
-  "phase": "DEV-COUNCIL",
-  "phase_status": "attente_checkpoint_2_triage",
+  "phase": "GSD",
+  "phase_status": "corrections_dev_council_p1",
   "cycle": {
     "numero": 2,
     "demarre_le": "2026-08-13",
@@ -30,12 +30,12 @@
   "iterations": {
     "design_review": 1,
     "design_review_max": 3,
-    "dev_council": 0,
+    "dev_council": 1,
     "dev_council_max": 3
   },
   "checkpoints": {
     "plan_design_valide": true,
-    "triage_findings": false,
+    "triage_findings": true,
     "go_publication": false,
     "confirmation_roadmap": false
   },
@@ -73,6 +73,7 @@
     "2026-08-13 — ✅ CHECKPOINT 1 : delta v1.1 validé par l'utilisateur (« valide »). Plan contractuel. ✅ UX-DESIGN → GSD (mode dégradé : .zeus/tasks.md cycle 2, vagues V0-V4)",
     "2026-08-13 — GSD cycle 2 : 27 tâches C01-C27 done, DoD 100 % cochée. ✅ GATE TESTS : build 0 warning, format OK, 69/69 tests (dont spike région sur vrais PDF, export tuilé, affine, projets). Log .zeus/reports/gate-cycle2-2026-08-13.log. Commit unique cycle 2. ✅ → DESIGN-REVIEW",
     "2026-08-13 — DESIGN-REVIEW n°2 (captures réelles via --screenshot, Reprendre seedé) : 1 BLOQUANT (composite blanc sans document → Reprendre illisible) corrigé en boucle courte (itération design_review 1/3) + bug HasAnyDocument/ClearFile attrapé ; re-gate 69/69, re-capture conforme ; 2 mineurs → roadmap ; états non-capturables consignés pour l'UAT. Rapport .zeus/reports/design-review-2.md, baseline docs/ui-baseline/cycle2/. ✅ → DEV-COUNCIL",
-    "2026-08-13 — DEV-COUNCIL n°2 (8 auditeurs + sceptique + cross-challenge 4 paires + arbitrage 3 juges) : 1 Bloquant (DON2-01 écriture .dcproj non atomique), 3 Majeurs (SEC2-01 UNC, TST2-01 SaveProject non testé, ARC2-01 extraction AlignmentSession arbitrée unanime), ~18 Mineurs, ~20 Infos, 1 invalidé, 9 sévérités abaissées. Fix unique identifié : IProjectStore atomique+validé. Rapport .zeus/reports/dev-council-2.md. ⏸ ATTENTE CHECKPOINT 2 : triage utilisateur"
+    "2026-08-13 — DEV-COUNCIL n°2 (8 auditeurs + sceptique + cross-challenge 4 paires + arbitrage 3 juges) : 1 Bloquant (DON2-01 écriture .dcproj non atomique), 3 Majeurs (SEC2-01 UNC, TST2-01 SaveProject non testé, ARC2-01 extraction AlignmentSession arbitrée unanime), ~18 Mineurs, ~20 Infos, 1 invalidé, 9 sévérités abaissées. Fix unique identifié : IProjectStore atomique+validé. Rapport .zeus/reports/dev-council-2.md. ⏸ ATTENTE CHECKPOINT 2 : triage utilisateur",
+    "2026-08-13 — ✅ CHECKPOINT 2 : triage utilisateur = « corrige P1 + extraction » (IProjectStore atomique+validé, politique UNC, FIA2-04/02, version 0.2.0+garde CI, extraction AlignmentSession). Itération dev_council 1/3. P2/P3 → roadmap. → GSD (boucle corrections)"
   ]
 }

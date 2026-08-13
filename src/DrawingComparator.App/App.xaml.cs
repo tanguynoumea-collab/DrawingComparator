@@ -78,6 +78,7 @@ public partial class App : Application
             sp.GetRequiredService<IPdfDocumentService>()));
         services.AddSingleton<IUserDialogs, UserDialogs>();
         services.AddSingleton<IRecentProjectsService, RecentProjectsService>();
+        services.AddSingleton<IProjectStore, ProjectStore>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
         _services = services.BuildServiceProvider();

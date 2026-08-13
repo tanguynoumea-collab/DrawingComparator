@@ -19,10 +19,31 @@ internal sealed class StubDialogs : IUserDialogs
         return Task.CompletedTask;
     }
 
+    /// <summary>Chemin retourné par PickProjectSavePath (null = utilisateur annule).</summary>
+    public string? NextProjectSavePath { get; set; }
+
+    /// <summary>Réponse à la confirmation de chemin réseau (SEC2-01). Défaut : refus.</summary>
+    public bool ConfirmNetworkPaths { get; set; }
+
+    public int NetworkConfirmCalls { get; private set; }
+    public int RelocateCalls { get; private set; }
+
     public string? PickPdfFile(string title) => null;
     public string? PickProjectOrPdf() => null;
-    public string? PickProjectSavePath(string suggestedFileName) => null;
-    public string? RelocateMissingFile(string missingPath) => null;
+    public string? PickProjectSavePath(string suggestedFileName) => NextProjectSavePath;
+
+    public string? RelocateMissingFile(string missingPath)
+    {
+        RelocateCalls++;
+        return null;
+    }
+
+    public Task<bool> ConfirmOpenNetworkPathAsync(string path)
+    {
+        NetworkConfirmCalls++;
+        return Task.FromResult(ConfirmNetworkPaths);
+    }
+
     public ExportRequest? ShowExportDialog() => NextExportRequest;
 
     /// <summary>Exécute l'export directement, sans fenêtre — la progression est collectée.</summary>

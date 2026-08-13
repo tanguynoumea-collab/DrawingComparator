@@ -87,6 +87,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public SKSizeI ViewportSize { get; private set; }
 
+    /// <summary>
+    /// Échelle DPI de l'écran (1,0 = 96 DPI). Le viewport et la ViewMatrix travaillent
+    /// en PIXELS PHYSIQUES ; le WriteableBitmap composite porte ce DPI pour que WPF
+    /// l'affiche pixel-à-pixel, net à 125/150 % (dev-senior SEN-10).
+    /// </summary>
+    public double DisplayScale { get; private set; } = 1.0;
+
+    public void SetDisplayScale(double scale)
+    {
+        if (Math.Abs(scale - DisplayScale) < 0.001)
+            return;
+        DisplayScale = scale;
+        UpdateZoomText();
+        RequestRecompose();
+    }
+
     [ObservableProperty]
     private WriteableBitmap? _compositeBitmap;
 
@@ -232,7 +248,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     private void UpdateZoomText()
-        => ZoomText = $"zoom {ViewMatrix.ScaleX / ScreenPxPerPdfPoint * 100:0} %";
+        => ZoomText = $"zoom {ViewMatrix.ScaleX / (ScreenPxPerPdfPoint * DisplayScale) * 100:0} %";
 
     public void UpdateCursorPosition(SKPoint screenPoint)
     {
@@ -480,8 +496,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 {
                     EndBackgroundCompose();
                 }
-                CompositeBitmap = SkiaInterop.ToWriteableBitmap(bitmap, CompositeBitmap);
-                bitmap.Dispose();
+                try
+                {
+                    CompositeBitmap = SkiaInterop.ToWriteableBitmap(bitmap, CompositeBitmap, DisplayScale);
+                }
+                finally
+                {
+                    bitmap.Dispose();
+                }
                 ComposedViewMatrix = view;
                 CompositeUpdated?.Invoke();
             }
@@ -518,13 +540,26 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // Toute composition qui lit les SKImage sur un thread de fond (viewport, export)
     // s'encadre de Begin/EndBackgroundCompose — appelés sur le thread UI, comme les
     // remplacements de raster : le compteur suffit, pas besoin de verrou.
+    // L'invariant de thread est vérifié en Debug (dev-senior SEN-06).
+
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+
+    [System.Diagnostics.Conditional("DEBUG")]
+    private void AssertOwnerThread()
+        => System.Diagnostics.Debug.Assert(Environment.CurrentManagedThreadId == _ownerThreadId,
+            "Begin/EndBackgroundCompose et RetireBitmap doivent être appelés sur le thread UI.");
 
     /// <summary>Déclare une composition de fond lisant les rasters courants.</summary>
-    internal void BeginBackgroundCompose() => _composersInFlight++;
+    internal void BeginBackgroundCompose()
+    {
+        AssertOwnerThread();
+        _composersInFlight++;
+    }
 
     /// <summary>Termine une composition de fond ; libère les rasters retirés quand plus rien ne les lit.</summary>
     internal void EndBackgroundCompose()
     {
+        AssertOwnerThread();
         _composersInFlight--;
         if (_composersInFlight == 0)
         {
@@ -537,6 +572,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Différer la libération d'un raster remplacé tant qu'une composition de fond peut le lire.</summary>
     public void RetireBitmap(SKImage bitmap)
     {
+        AssertOwnerThread();
         if (_composersInFlight > 0)
             _retiredBitmaps.Add(bitmap);
         else

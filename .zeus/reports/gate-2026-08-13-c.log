@@ -1,0 +1,7 @@
+=== GATE TESTS 2026-08-13 (post dev-senior) ===
+    0 Erreur(s)
+
+Temps écoulé 00:00:04.85
+
+Réussi!  - échec :     0, réussite :    29, ignorée(s) :     0, total :    29, durée : 445 ms - DrawingComparator.Tests.dll (net8.0)
+format OK

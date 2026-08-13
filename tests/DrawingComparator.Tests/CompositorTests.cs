@@ -89,6 +89,32 @@ public class CompositorTests
     }
 
     [Fact]
+    public void ColoredSourceStroke_StaysVisibleInBothTints()
+    {
+        // SEN-09 : un nuage de révision ROUGE (source colorée, pas noire) doit rester
+        // visible — la luminance BT.709 d'un rouge pur est ~0,21, pas 1,0.
+        using var bmp = new SKBitmap(new SKImageInfo(2, 2, SKColorType.Bgra8888, SKAlphaType.Premul));
+        bmp.Erase(SKColors.White);
+        bmp.SetPixel(0, 0, SKColors.Red);
+        bmp.SetImmutable();
+        using var raster = SKImage.FromBitmap(bmp);
+        var compositor = new ComparisonCompositor();
+
+        foreach (var tint in new[] { LayerTint.Red, LayerTint.Blue })
+        {
+            var layers = new List<LayerRenderInfo> { new(raster, 1f, SKMatrix.Identity, tint, 1f) };
+            using var result = compositor.ComposeToBitmap(new SKSizeI(2, 2), SKMatrix.Identity, layers);
+            var pixel = result.GetPixel(0, 0);
+
+            // Le trait ne doit PAS avoir disparu (blanc) : ses canaux non saturés
+            // portent la luminance ~0,21 → nettement sombres.
+            int minChannel = Math.Min(pixel.Red, Math.Min(pixel.Green, pixel.Blue));
+            Assert.True(minChannel < 100,
+                $"Trait rouge source invisible en teinte {tint} : {pixel}");
+        }
+    }
+
+    [Fact]
     public void HalfStrength_IsPaleTint_NotAlphaBlend()
     {
         using var raster1 = MakeRaster();

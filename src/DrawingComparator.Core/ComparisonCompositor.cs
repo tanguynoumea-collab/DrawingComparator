@@ -91,22 +91,30 @@ public sealed class ComparisonCompositor : IComparisonCompositor
     /// L'intensité est une interpolation vers le blanc : canal teinté saturé à 255,
     /// canaux opposés = strength·L + (1−strength)·255.
     /// </summary>
+    // Luminance BT.709 : un trait source COLORÉ (nuage de révision rouge, surligneur
+    // jaune) doit rester visible dans le comparatif — prendre un seul canal comme
+    // luminance ferait disparaître silencieusement ces traits (dev-senior SEN-09).
+    private const float LumR = 0.2126f;
+    private const float LumG = 0.7152f;
+    private const float LumB = 0.0722f;
+
     internal static SKColorFilter CreateTintFilter(LayerTint tint, float strength)
     {
         float s = Math.Clamp(strength, 0f, 1f);
         // Colonne de translation en espace normalisé 0..1 (convention Skia moderne).
         float offset = 1f - s;
+        float lr = s * LumR, lg = s * LumG, lb = s * LumB;
 
         float[] matrix = tint == LayerTint.Red
             ? [
-                0, 0, 0, 0, 1,       // R' = 1 (canal teinté saturé)
-                s, 0, 0, 0, offset,  // G' = s·L + (1−s)
-                s, 0, 0, 0, offset,  // B' = idem
-                0, 0, 0, 0, 1,       // A' = opaque
+                0, 0, 0, 0, 1,          // R' = 1 (canal teinté saturé)
+                lr, lg, lb, 0, offset,  // G' = s·luminance + (1−s)
+                lr, lg, lb, 0, offset,  // B' = idem
+                0, 0, 0, 0, 1,          // A' = opaque
               ]
             : [
-                s, 0, 0, 0, offset,
-                s, 0, 0, 0, offset,
+                lr, lg, lb, 0, offset,
+                lr, lg, lb, 0, offset,
                 0, 0, 0, 0, 1,
                 0, 0, 0, 0, 1,
               ];

@@ -52,7 +52,20 @@ public sealed class ExportService(IComparisonCompositor compositor) : IExportSer
 
     public Task ExportViewPngAsync(string outputPath, SKSizeI sizePixels, SKMatrix baseToView,
         IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct = default)
-        => Task.Run(() => ComposeAndSave(outputPath, sizePixels, baseToView, layers, ct), ct);
+        => Task.Run(() =>
+        {
+            // Même garde-fou mémoire que la feuille entière (dev-senior SEN-02).
+            double pixels = (double)sizePixels.Width * sizePixels.Height;
+            if (pixels > MaxPixels)
+            {
+                float f = (float)Math.Sqrt(MaxPixels / pixels);
+                sizePixels = new SKSizeI(
+                    Math.Max(1, (int)(sizePixels.Width * f)),
+                    Math.Max(1, (int)(sizePixels.Height * f)));
+                baseToView = SKMatrix.CreateScale(f, f).PreConcat(baseToView);
+            }
+            ComposeAndSave(outputPath, sizePixels, baseToView, layers, ct);
+        }, ct);
 
     private void ComposeAndSave(string outputPath, SKSizeI size, SKMatrix baseToView,
         IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct)

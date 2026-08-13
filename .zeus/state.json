@@ -1,0 +1,48 @@
+{
+  "$schema_note": "État du pipeline ZEUS — commité avec le projet. Mis à jour à chaque transition de phase.",
+  "projet": "DrawingComparator",
+  "version_courante": "0.0.0",
+  "route": "full",
+  "phase": "GSD",
+  "phase_status": "en_cours",
+  "cycle": {
+    "numero": 1,
+    "demarre_le": "2026-08-13",
+    "idees": [
+      "Superposition de deux plans PDF teintés (rouge/bleu) avec fusion colorée révélant les différences",
+      "Alignement du plan 2 sur le plan 1 par point de référence (ex. angle de mur)",
+      "Redimensionnement/rotation du plan 2 ancré au point de référence via un second point de correspondance"
+    ],
+    "impact_ui": true,
+    "mode_daedalus": "CREATION"
+  },
+  "iterations": {
+    "design_review": 0,
+    "design_review_max": 3,
+    "dev_council": 0,
+    "dev_council_max": 3
+  },
+  "checkpoints": {
+    "plan_design_valide": true,
+    "triage_findings": false,
+    "go_publication": false,
+    "confirmation_roadmap": false
+  },
+  "pending": {
+    "findings_critiques": [],
+    "pour_roadmap": []
+  },
+  "artefacts": {
+    "design_plan": "docs/DESIGN_PLAN.md",
+    "rapports": [".zeus/reports/llm-council-2026-08-13.md"],
+    "dod": ".zeus/DOD.md",
+    "audit_points": "AUDIT_POINTS.md"
+  },
+  "phases_sautees": [],
+  "historique": [
+    "2026-08-13 — Init ZEUS : nouveau projet DrawingComparator, route FULL, phase ROADMAP (idées fournies par le pitch utilisateur)",
+    "2026-08-13 — Entretien project-coding-prep terminé : stack C#/WPF .NET 8, exe local, v1 = superposition + alignement 2 points (translation+échelle+rotation) + zoom/pan + export + sélecteur page + opacité. PROMPT_MERE.md généré. ✅ ROADMAP → LLM-COUNCIL",
+    "2026-08-13 — LLM-Council (5 membres + 5 relecteurs aveugles) : architecture PDFium+SkiaSharp viewport, multiply, Matrix 3x2 en coordonnées PDF. Rigoriste 1er unanime. Rapport .zeus/reports/llm-council-2026-08-13.md. ✅ LLM-COUNCIL → UX-DESIGN",
+    "2026-08-13 — DAEDALUS mode CRÉATION : DESIGN_PLAN.md (négatoscope sombre, accent ambre chantier, viseur de calage signature). ✅ CHECKPOINT 1 : plan validé par l'utilisateur (option loupe conservée). ✅ UX-DESIGN → GSD (mode dégradé consigné : tâches dans .zeus/tasks.md, DoD .zeus/DOD.md)"
+  ]
+}

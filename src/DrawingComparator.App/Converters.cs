@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+
 using DrawingComparator.Core;
 
 namespace DrawingComparator.App;

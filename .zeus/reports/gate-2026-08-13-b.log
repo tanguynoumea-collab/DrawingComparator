@@ -1,0 +1,13 @@
+=== GATE TESTS 2026-08-13 (post-corrections dev-council) ===
+--- dotnet build -c Release (TreatWarningsAsErrors, AnalysisLevel latest-recommended) ---
+    0 Avertissement(s)
+    0 Erreur(s)
+
+Temps écoulé 00:00:06.74
+--- dotnet format --verify-no-changes ---
+OK format propre
+--- dotnet test -c Release ---
+
+Réussi!  - échec :     0, réussite :    28, ignorée(s) :     0, total :    28, durée : 546 ms - DrawingComparator.Tests.dll (net8.0)
+--- publish ---
+exe 79,4 Mo single-file, FileVersion 0.1.0.0, SHA256SUMS.txt généré

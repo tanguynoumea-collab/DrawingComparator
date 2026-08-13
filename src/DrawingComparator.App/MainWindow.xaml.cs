@@ -1,4 +1,5 @@
 using System.Windows;
+
 using DrawingComparator.App.ViewModels;
 
 namespace DrawingComparator.App;

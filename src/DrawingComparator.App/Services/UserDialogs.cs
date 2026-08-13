@@ -1,5 +1,7 @@
 using System.Windows;
+
 using DrawingComparator.App.Views;
+
 using Microsoft.Win32;
 
 namespace DrawingComparator.App.Services;

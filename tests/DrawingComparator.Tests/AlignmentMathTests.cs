@@ -1,4 +1,5 @@
 using DrawingComparator.Core;
+
 using SkiaSharp;
 
 namespace DrawingComparator.Tests;

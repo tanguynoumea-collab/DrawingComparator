@@ -2,8 +2,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+
 using DrawingComparator.App.Services;
 using DrawingComparator.App.ViewModels;
+
 using SkiaSharp;
 
 namespace DrawingComparator.App.Views;

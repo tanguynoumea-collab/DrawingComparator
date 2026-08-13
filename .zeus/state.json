@@ -3,7 +3,7 @@
   "projet": "DrawingComparator",
   "version_courante": "0.0.0",
   "route": "full",
-  "phase": "GSD",
+  "phase": "DEV-COUNCIL",
   "phase_status": "en_cours",
   "cycle": {
     "numero": 1,
@@ -30,11 +30,23 @@
   },
   "pending": {
     "findings_critiques": [],
-    "pour_roadmap": []
+    "pour_roadmap": [
+      "Assombrissement plein canvas à 60 % en mode calage (au lieu de l'atténuation du calque inactif)",
+      "Snackbar de confirmation d'export (actuellement barre de statut)",
+      "Thème light (tokens définis au DESIGN_PLAN, non implémentés)",
+      "Rendu par région PDFium au zoom profond (netteté vectorielle, prévu v1.1 au LLM-Council)",
+      "3e point de contrôle optionnel affichant l'erreur résiduelle + affine 3 points (risque anisotropie, LLM-Council)",
+      "Binarisation optionnelle pour PDF scannés (LLM-Council)"
+    ]
   },
   "artefacts": {
     "design_plan": "docs/DESIGN_PLAN.md",
-    "rapports": [".zeus/reports/llm-council-2026-08-13.md"],
+    "rapports": [
+      ".zeus/reports/llm-council-2026-08-13.md",
+      ".zeus/reports/gate-2026-08-13.log",
+      ".zeus/reports/design-review-1.md",
+      ".zeus/reports/dev-council-1.md"
+    ],
     "dod": ".zeus/DOD.md",
     "audit_points": "AUDIT_POINTS.md"
   },
@@ -43,6 +55,7 @@
     "2026-08-13 — Init ZEUS : nouveau projet DrawingComparator, route FULL, phase ROADMAP (idées fournies par le pitch utilisateur)",
     "2026-08-13 — Entretien project-coding-prep terminé : stack C#/WPF .NET 8, exe local, v1 = superposition + alignement 2 points (translation+échelle+rotation) + zoom/pan + export + sélecteur page + opacité. PROMPT_MERE.md généré. ✅ ROADMAP → LLM-COUNCIL",
     "2026-08-13 — LLM-Council (5 membres + 5 relecteurs aveugles) : architecture PDFium+SkiaSharp viewport, multiply, Matrix 3x2 en coordonnées PDF. Rigoriste 1er unanime. Rapport .zeus/reports/llm-council-2026-08-13.md. ✅ LLM-COUNCIL → UX-DESIGN",
-    "2026-08-13 — DAEDALUS mode CRÉATION : DESIGN_PLAN.md (négatoscope sombre, accent ambre chantier, viseur de calage signature). ✅ CHECKPOINT 1 : plan validé par l'utilisateur (option loupe conservée). ✅ UX-DESIGN → GSD (mode dégradé consigné : tâches dans .zeus/tasks.md, DoD .zeus/DOD.md)"
+    "2026-08-13 — DAEDALUS mode CRÉATION : DESIGN_PLAN.md (négatoscope sombre, accent ambre chantier, viseur de calage signature). ✅ CHECKPOINT 1 : plan validé par l'utilisateur (option loupe conservée). ✅ UX-DESIGN → GSD (mode dégradé consigné : tâches dans .zeus/tasks.md, DoD .zeus/DOD.md)",
+    "2026-08-13 — GSD : 18 tâches done, DoD 100 % cochée. ✅ GATE TESTS : build 0 warning, 15/15 tests (dont workflow calage intégration sur vrais PDF). ✅ DESIGN-REVIEW n°1 : zéro bloquant, 2 mineurs → roadmap, loupe → UAT. Itérations design_review consommées : 0/3. ✅ → DEV-COUNCIL"
   ]
 }

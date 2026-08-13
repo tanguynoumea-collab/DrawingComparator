@@ -94,7 +94,9 @@
 
             <views:ComparatorView Grid.Column="0" DataContext="{Binding}" />
 
-            <!-- État vide : deux zones de dépôt (DESIGN_PLAN §3 « état vide ») -->
+            <!-- État vide : deux zones de dépôt (DESIGN_PLAN §3 « état vide »).
+                 DUPLIQUÉ VOLONTAIREMENT : les cartes BASE et RÉVISÉ sont jumelles —
+                 toute retouche visuelle doit être reportée dans LES DEUX blocs. -->
             <StackPanel Grid.Column="0"
                         VerticalAlignment="Center"
                         HorizontalAlignment="Center"
@@ -159,7 +161,10 @@
                 <StackPanel Margin="{StaticResource SpaceM}">
                     <TextBlock Text="CALQUES" Style="{StaticResource PanelTitle}" Margin="0,0,0,8" />
 
-                    <!-- Carte plan de base -->
+                    <!-- Carte plan de base.
+                         DUPLIQUÉ VOLONTAIREMENT avec la carte plan révisé ci-dessous
+                         (2 instances figées par le métier — un UserControl paramétré
+                         coûterait plus qu'il ne rapporte) : modifier LES DEUX cartes. -->
                     <Border Style="{StaticResource LayerCard}"
                             BorderBrush="{Binding BaseLayer.Tint, Converter={StaticResource TintToBrush}}"
                             BorderThickness="3,0,0,0"

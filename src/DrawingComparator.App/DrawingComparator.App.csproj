@@ -8,9 +8,24 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
+  <!-- Options de publish figées ici (source unique, cf. scripts/publish.ps1) :
+       un seul exe réellement copiable — natives extraites au premier lancement,
+       compressées ; jamais de trimming (WPF non trimmable). -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <CopyDebugSymbolFilesFromPackages>false</CopyDebugSymbolFilesFromPackages>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DrawingComparator.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 

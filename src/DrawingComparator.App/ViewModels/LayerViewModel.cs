@@ -1,7 +1,10 @@
 using System.IO;
+
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+
 using DrawingComparator.Core;
+
 using SkiaSharp;
 
 namespace DrawingComparator.App.ViewModels;
@@ -10,10 +13,9 @@ namespace DrawingComparator.App.ViewModels;
 /// Un calque : un fichier PDF, une page, un raster, une opacité, un rôle (base ou révision).
 /// Le raster est rendu à un DPI adaptatif plafonné (grand côté ≤ MaxRasterEdge px).
 /// </summary>
-public sealed partial class LayerViewModel : ObservableObject
+public sealed partial class LayerViewModel : ObservableObject, IDisposable
 {
     private const float MaxRasterEdge = 8192f;
-    private const float MinDpi = 72f;
     private const float MaxDpi = 300f;
 
     private readonly IPdfDocumentService _pdfService;
@@ -82,10 +84,15 @@ public sealed partial class LayerViewModel : ObservableObject
         try
         {
             var info = await _pdfService.OpenAsync(path);
+            string? previousPath = FilePath;
             FilePath = path;
             DocumentInfo = info;
             PageNumbers = Enumerable.Range(1, info.PageCount).ToList();
             SelectedPage = 1;
+            // L'ancien document est libéré une fois le nouveau ouvert (jamais avant :
+            // en cas d'échec d'ouverture, le calque garde son contenu).
+            if (previousPath is not null && previousPath != path)
+                _pdfService.Release(previousPath);
             await RenderCurrentPageAsync();
         }
         catch (Exception ex)
@@ -113,7 +120,9 @@ public sealed partial class LayerViewModel : ObservableObject
         if (FilePath is null || DocumentInfo is null)
             return;
 
-        _renderCts?.Cancel();
+        var previousCts = _renderCts;
+        previousCts?.Cancel();
+        previousCts?.Dispose();
         _renderCts = new CancellationTokenSource();
         var ct = _renderCts.Token;
 
@@ -121,7 +130,9 @@ public sealed partial class LayerViewModel : ObservableObject
         if (size.IsEmpty)
             return;
 
-        float dpi = Math.Clamp(MaxRasterEdge / Math.Max(size.Width, size.Height) * 72f, MinDpi, MaxDpi);
+        // Pas de plancher : sur une page géante, le DPI descend sous 72 plutôt que de
+        // dépasser le budget — le service applique de toute façon son propre plafond (SEC-01).
+        float dpi = Math.Min(MaxRasterEdge / Math.Max(size.Width, size.Height) * 72f, MaxDpi);
 
         IsLoading = true;
         try
@@ -160,6 +171,8 @@ public sealed partial class LayerViewModel : ObservableObject
     private void ClearFile()
     {
         _renderCts?.Cancel();
+        if (FilePath is not null)
+            _pdfService.Release(FilePath);
         FilePath = null;
         DocumentInfo = null;
         PageNumbers = [];
@@ -169,6 +182,13 @@ public sealed partial class LayerViewModel : ObservableObject
         if (old is not null)
             _retireBitmap(old);
         _onRasterChanged();
+    }
+
+    public void Dispose()
+    {
+        _renderCts?.Cancel();
+        _renderCts?.Dispose();
+        _renderCts = null;
     }
 
     /// <summary>Info de composition, ou null si le calque n'a pas de raster.</summary>

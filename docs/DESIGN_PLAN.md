@@ -178,3 +178,8 @@ Pendant le calage : zoom/pan restent actifs (molette + drag droit), clic gauche 
 | Histogramme / % de différence | Faux-précis : les franges d'AA rendraient le chiffre mensonger (cf. rapport LLM-Council, risque n°2) | 2026-08-13 |
 | Onglets Plan 1 / Plan 2 dans le panneau | Masque un des deux plans ; les cartes empilées montrent les deux états en permanence | 2026-08-13 |
 | Toolbar flottante sur le canvas | Occlusion du document ; le canvas reste vierge de tout chrome | 2026-08-13 |
+
+## 10. Écarts consacrés / reportés (dev-council n°1, PERT-04 / PERT-06)
+
+- **Consacré v1** : chargement par ligne de commande `DrawingComparator.exe base.pdf [revision.pdf]` (entrée depuis l'Explorateur). S'ajoute au mapping §4.
+- **Reportés au cycle 2 (roadmap)** : bandeau « Cette page semble vide » ; progression déterminée + annulation de l'export ; motion §7 (assombrissement 150 ms, « clac » 200 ms du calage) ; thème light (tokens définis, non implémentés). Le plan reste la référence de ces intentions ; le produit v0.1.0 ne les promet pas.

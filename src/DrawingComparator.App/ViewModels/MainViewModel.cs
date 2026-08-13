@@ -1,8 +1,11 @@
 using System.Windows.Media.Imaging;
+
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+
 using DrawingComparator.App.Services;
 using DrawingComparator.Core;
+
 using SkiaSharp;
 
 namespace DrawingComparator.App.ViewModels;
@@ -21,11 +24,17 @@ public sealed partial class MainViewModel : ObservableObject
 {
     private const float FitMarginPx = 24f;
 
+    /// <summary>Zoom 100 % = 1 point PDF (1/72") affiché sur 96/72 pixel WPF (device-independent, 96 DPI).</summary>
+    private const float ScreenPxPerPdfPoint = 96f / 72f;
+    private const float MinZoomScale = 0.02f;
+    private const float MaxZoomScale = 60f;
+
     private readonly IComparisonCompositor _compositor;
     private readonly IExportService _exportService;
     private readonly IUserDialogs _dialogs;
 
     private readonly List<SKImage> _retiredBitmaps = [];
+    private int _composersInFlight;
     private bool _composeRunning;
     private bool _composeDirty;
 
@@ -74,7 +83,7 @@ public sealed partial class MainViewModel : ObservableObject
     public SKMatrix AlignMatrix { get; private set; } = SKMatrix.Identity;
 
     /// <summary>Matrice de vue : points PDF du plan de base → pixels du viewport.</summary>
-    public SKMatrix ViewMatrix { get; private set; } = SKMatrix.CreateScale(96f / 72f, 96f / 72f);
+    public SKMatrix ViewMatrix { get; private set; } = SKMatrix.CreateScale(ScreenPxPerPdfPoint, ScreenPxPerPdfPoint);
 
     public SKSizeI ViewportSize { get; private set; }
 
@@ -82,10 +91,7 @@ public sealed partial class MainViewModel : ObservableObject
     private WriteableBitmap? _compositeBitmap;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsComparisonVisible))]
     private bool _hasAnyDocument;
-
-    public bool IsComparisonVisible => HasAnyDocument;
 
     // ── Calage ────────────────────────────────────────────────────────────────
 
@@ -191,7 +197,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public void ZoomAt(SKPoint screenPoint, float factor)
     {
-        float newScale = Math.Clamp(ViewMatrix.ScaleX * factor, 0.02f, 60f);
+        float newScale = Math.Clamp(ViewMatrix.ScaleX * factor, MinZoomScale, MaxZoomScale);
         factor = newScale / ViewMatrix.ScaleX;
         var m = ViewMatrix;
         m = SKMatrix.CreateTranslation(screenPoint.X, screenPoint.Y)
@@ -226,7 +232,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private void UpdateZoomText()
-        => ZoomText = $"zoom {ViewMatrix.ScaleX / (96f / 72f) * 100:0} %";
+        => ZoomText = $"zoom {ViewMatrix.ScaleX / ScreenPxPerPdfPoint * 100:0} %";
 
     public void UpdateCursorPosition(SKPoint screenPoint)
     {
@@ -309,6 +315,9 @@ public sealed partial class MainViewModel : ObservableObject
 
         var sheetSize = BaseLayer.HasFile ? BaseLayer.PageSizePoints : RevisionLayer.PageSizePoints;
         var layers = BuildRenderLayers(dimForAlignment: false);
+        // Les SKImage capturés dans layers sont lus par le thread d'export : la
+        // composition est déclarée « en vol » pour bloquer leur libération (FIA-01).
+        BeginBackgroundCompose();
         try
         {
             StatusMessage = "Export en cours…";
@@ -317,15 +326,7 @@ public sealed partial class MainViewModel : ObservableObject
                 // Vue courante : le viewport à l'écran, rendu à 2× pour l'archivage.
                 var size = new SKSizeI(ViewportSize.Width * 2, ViewportSize.Height * 2);
                 var view = SKMatrix.CreateScale(2f, 2f).PreConcat(ViewMatrix);
-                await Task.Run(() =>
-                {
-                    using var bitmap = _compositor.ComposeToBitmap(size, view, layers);
-                    using var image = SKImage.FromBitmap(bitmap);
-                    using var data = image.Encode(SKEncodedImageFormat.Png, 100)
-                        ?? throw new InvalidOperationException("L'encodage PNG a échoué.");
-                    using var stream = System.IO.File.Create(request.OutputPath);
-                    data.SaveTo(stream);
-                });
+                await _exportService.ExportViewPngAsync(request.OutputPath, size, view, layers);
                 StatusMessage = $"Exporté (vue courante) → {request.OutputPath}";
             }
             else
@@ -340,6 +341,10 @@ public sealed partial class MainViewModel : ObservableObject
             StatusMessage = "";
             await _dialogs.ShowErrorAsync("Export impossible",
                 $"L'écriture du PNG a échoué : {ex.Message} Réessayez vers un autre dossier.");
+        }
+        finally
+        {
+            EndBackgroundCompose();
         }
     }
 
@@ -407,12 +412,12 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
         var (scale, rotation) = AlignmentMath.Decompose(AlignMatrix);
-        AlignmentSummary = $"é ={scale,7:0.0000}   θ ={rotation,7:+0.00;-0.00}°";
+        AlignmentSummary = $"échelle ={scale,7:0.0000}\nrotation ={rotation,7:+0.00;-0.00}°";
     }
 
     // ── Composition ───────────────────────────────────────────────────────────
 
-    private IReadOnlyList<LayerRenderInfo> BuildRenderLayers(bool dimForAlignment)
+    private List<LayerRenderInfo> BuildRenderLayers(bool dimForAlignment)
     {
         float baseStrength = 1f, revisionStrength = 1f;
         if (dimForAlignment)
@@ -433,10 +438,12 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Recomposition coalescée : jamais plus d'une composition en vol, la dernière
-    /// demande gagne. Le raster remplacé n'est libéré qu'une fois la composition finie.
+    /// Recomposition coalescée : jamais plus d'une composition de viewport en vol,
+    /// la dernière demande gagne. Wrapper non-async : le cœur testable est
+    /// <see cref="RecomposeLoopAsync"/>, dont les erreurs sont contenues (statut,
+    /// pas de dialogue par événement souris).
     /// </summary>
-    public async void RequestRecompose()
+    public void RequestRecompose()
     {
         if (ViewportSize.Width <= 0 || ViewportSize.Height <= 0)
             return;
@@ -445,7 +452,14 @@ public sealed partial class MainViewModel : ObservableObject
             _composeDirty = true;
             return;
         }
+        CurrentRecompose = RecomposeLoopAsync();
+    }
 
+    /// <summary>Tâche de la boucle de recomposition en cours — observable par les tests.</summary>
+    public Task? CurrentRecompose { get; private set; }
+
+    internal async Task RecomposeLoopAsync()
+    {
         _composeRunning = true;
         try
         {
@@ -456,7 +470,16 @@ public sealed partial class MainViewModel : ObservableObject
                 var view = ViewMatrix;
                 var size = ViewportSize;
 
-                var bitmap = await Task.Run(() => _compositor.ComposeToBitmap(size, view, layers));
+                BeginBackgroundCompose();
+                SKBitmap bitmap;
+                try
+                {
+                    bitmap = await Task.Run(() => _compositor.ComposeToBitmap(size, view, layers));
+                }
+                finally
+                {
+                    EndBackgroundCompose();
+                }
                 CompositeBitmap = SkiaInterop.ToWriteableBitmap(bitmap, CompositeBitmap);
                 bitmap.Dispose();
                 ComposedViewMatrix = view;
@@ -464,12 +487,15 @@ public sealed partial class MainViewModel : ObservableObject
             }
             while (_composeDirty);
         }
+        catch (Exception ex)
+        {
+            // Pas de dialogue ici : un échec par MouseMove deviendrait une tempête
+            // de fenêtres modales. Le statut informe, la boucle s'arrête proprement.
+            StatusMessage = $"Rendu impossible : {ex.Message}";
+        }
         finally
         {
             _composeRunning = false;
-            foreach (var b in _retiredBitmaps)
-                b.Dispose();
-            _retiredBitmaps.Clear();
         }
     }
 
@@ -488,10 +514,30 @@ public sealed partial class MainViewModel : ObservableObject
         return _compositor.ComposeToBitmap(new SKSizeI(sizePx, sizePx), m, BuildRenderLayers(dimForAlignment: IsAligning));
     }
 
-    /// <summary>Différer la libération d'un raster remplacé jusqu'à la fin de la composition en vol.</summary>
+    // ── Cycle de vie des rasters (FIA-01) ─────────────────────────────────────
+    // Toute composition qui lit les SKImage sur un thread de fond (viewport, export)
+    // s'encadre de Begin/EndBackgroundCompose — appelés sur le thread UI, comme les
+    // remplacements de raster : le compteur suffit, pas besoin de verrou.
+
+    /// <summary>Déclare une composition de fond lisant les rasters courants.</summary>
+    internal void BeginBackgroundCompose() => _composersInFlight++;
+
+    /// <summary>Termine une composition de fond ; libère les rasters retirés quand plus rien ne les lit.</summary>
+    internal void EndBackgroundCompose()
+    {
+        _composersInFlight--;
+        if (_composersInFlight == 0)
+        {
+            foreach (var b in _retiredBitmaps)
+                b.Dispose();
+            _retiredBitmaps.Clear();
+        }
+    }
+
+    /// <summary>Différer la libération d'un raster remplacé tant qu'une composition de fond peut le lire.</summary>
     public void RetireBitmap(SKImage bitmap)
     {
-        if (_composeRunning)
+        if (_composersInFlight > 0)
             _retiredBitmaps.Add(bitmap);
         else
             bitmap.Dispose();

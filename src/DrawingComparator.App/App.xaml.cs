@@ -1,7 +1,9 @@
 using System.Windows;
+
 using DrawingComparator.App.Services;
 using DrawingComparator.App.ViewModels;
 using DrawingComparator.Core;
+
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DrawingComparator.App;
@@ -9,6 +11,8 @@ namespace DrawingComparator.App;
 public partial class App : Application
 {
     private ServiceProvider? _services;
+    private int _dispatcherErrorCount;
+    private DateTime _dispatcherErrorWindowStart = DateTime.MinValue;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -19,6 +23,29 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) =>
         {
             LogCrash(args.Exception);
+
+            // Les exceptions d'état irrécupérable ne se rattrapent pas : mieux vaut
+            // un crash franc qu'un export silencieusement faux.
+            if (args.Exception is OutOfMemoryException)
+                return;
+
+            // Garde anti-rafale : au-delà de 3 erreurs en 10 s, une MessageBox par
+            // événement souris rendrait l'app inutilisable — on s'arrête proprement.
+            var now = DateTime.UtcNow;
+            if ((now - _dispatcherErrorWindowStart).TotalSeconds > 10)
+            {
+                _dispatcherErrorWindowStart = now;
+                _dispatcherErrorCount = 0;
+            }
+            if (++_dispatcherErrorCount > 3)
+            {
+                MessageBox.Show(
+                    $"Erreurs répétées — l'application va se fermer.\nDétails : {CrashLogPath}",
+                    "DrawingComparator", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(1);
+                return;
+            }
+
             MessageBox.Show(
                 $"Une erreur inattendue s'est produite : {args.Exception.Message}\n\nDétails : {CrashLogPath}",
                 "DrawingComparator", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -26,6 +53,8 @@ public partial class App : Application
         };
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             LogCrash(args.ExceptionObject as Exception);
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
+            LogCrash(args.Exception);
 
         var services = new ServiceCollection();
         services.AddSingleton<IPdfDocumentService, PdfDocumentService>();
@@ -39,35 +68,57 @@ public partial class App : Application
         MainWindow = _services.GetRequiredService<MainWindow>();
         MainWindow.Show();
 
-        // DrawingComparator.exe base.pdf [revision.pdf] : chargement direct depuis la ligne de commande.
-        var pdfArgs = e.Args.Where(a => a.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)).ToArray();
         var vm = _services.GetRequiredService<MainViewModel>();
-        _ = RunStartupSequenceAsync(vm, pdfArgs, e.Args);
+        _ = RunStartupSequenceAsync(vm, e.Args);
     }
 
-    private async Task RunStartupSequenceAsync(MainViewModel vm, string[] pdfPaths, string[] allArgs)
+    /// <summary>
+    /// Séquence de démarrage :
+    /// - `DrawingComparator.exe base.pdf [revision.pdf]` charge les plans directement ;
+    /// - `--align` et `--screenshot &lt;png&gt;` sont l'outillage de design-review, volontairement
+    ///   présent dans l'exe Release (arbitrage dev-council n°1 : une revue capture le binaire
+    ///   réellement distribué, pas un build Debug).
+    /// Toute erreur est journalisée ; en mode capture, l'app quitte toujours (code 1 si échec).
+    /// </summary>
+    private async Task RunStartupSequenceAsync(MainViewModel vm, string[] args)
     {
-        if (pdfPaths.Length > 0)
-            await vm.LoadIntoLayerAsync(vm.BaseLayer, pdfPaths[0]);
-        if (pdfPaths.Length > 1)
-            await vm.LoadIntoLayerAsync(vm.RevisionLayer, pdfPaths[1]);
-
-        // Outillage design-review : --align entre en mode calage, --screenshot <png> capture
-        // la fenêtre par RenderTargetBitmap (fiable sans bureau interactif) puis quitte.
-        int screenshotIndex = Array.IndexOf(allArgs, "--screenshot");
-        if (allArgs.Contains("--align") && vm.StartAlignmentCommand.CanExecute(null))
-            vm.StartAlignmentCommand.Execute(null);
-
-        if (screenshotIndex >= 0 && screenshotIndex + 1 < allArgs.Length)
+        int screenshotIndex = Array.IndexOf(args, "--screenshot");
+        bool screenshotMode = screenshotIndex >= 0 && screenshotIndex + 1 < args.Length;
+        try
         {
-            await Task.Delay(2500); // laisser la composition asynchrone aboutir
-            CaptureWindow(MainWindow!, allArgs[screenshotIndex + 1]);
-            Shutdown();
+            var pdfPaths = args.Where(a => a.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (pdfPaths.Length > 0)
+                await vm.LoadIntoLayerAsync(vm.BaseLayer, pdfPaths[0]);
+            if (pdfPaths.Length > 1)
+                await vm.LoadIntoLayerAsync(vm.RevisionLayer, pdfPaths[1]);
+
+            if (args.Contains("--align") && vm.StartAlignmentCommand.CanExecute(null))
+                vm.StartAlignmentCommand.Execute(null);
+
+            if (screenshotMode)
+            {
+                // Synchronisation sur la composition réelle (pas de délai magique) :
+                // on attend la fin de la boucle de recomposition en vol, avec timeout.
+                var recompose = vm.CurrentRecompose ?? Task.CompletedTask;
+                await Task.WhenAny(recompose, Task.Delay(TimeSpan.FromSeconds(8)));
+                await Task.Delay(300); // laisser le binding pousser le WriteableBitmap à l'écran
+
+                CaptureWindow(MainWindow!, args[screenshotIndex + 1]);
+                Shutdown();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogCrash(ex);
+            if (screenshotMode)
+                Shutdown(1); // jamais de hang silencieux du pipeline de capture
         }
     }
 
     private static void CaptureWindow(Window window, string outputPath)
     {
+        if (window.ActualWidth < 1 || window.ActualHeight < 1)
+            throw new InvalidOperationException("Fenêtre sans surface à capturer (minimisée ?).");
         var target = new System.Windows.Media.Imaging.RenderTargetBitmap(
             (int)window.ActualWidth, (int)window.ActualHeight, 96, 96,
             System.Windows.Media.PixelFormats.Pbgra32);

@@ -1,7 +1,9 @@
 using System.IO;
+
 using DrawingComparator.App.Services;
 using DrawingComparator.App.ViewModels;
 using DrawingComparator.Core;
+
 using SkiaSharp;
 
 namespace DrawingComparator.Tests;

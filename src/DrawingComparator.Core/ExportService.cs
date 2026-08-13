@@ -46,6 +46,12 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
     /// <summary>Budget de pixels d'une bande de rendu (rasters de région + composite de bande).</summary>
     private const double BandPixels = 16_000_000;
 
+    /// <summary>
+    /// Miroir de <c>PdfDocumentService.MaxRenderEdge</c> (classe annotée windows-only, CA1416
+    /// interdit sa lecture depuis ce type neutre) ; l'égalité des deux est verrouillée par test.
+    /// </summary>
+    public const float MaxRegionEdgePx = 8192f;
+
     /// <summary>Marge ajoutée aux régions rendues (points PDF) pour absorber l'anti-aliasing aux joints de bandes.</summary>
     private const float BandSeamMarginPoints = 2f;
 
@@ -65,6 +71,17 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
         return (scale, scale * 72f);
     }
 
+    /// <summary>
+    /// Facteur d'échelle du calage d'un calque (√|det|) : le rendu de sa région doit se faire
+    /// à DPI × facteur DANS SON PROPRE ESPACE pour arriver au DPI cible une fois transformé
+    /// vers la base (dev-senior SEN2-04 — plans à échelles différentes).
+    /// </summary>
+    public static float LayerDpiFactor(SKMatrix docToBase)
+    {
+        double det = Math.Abs(docToBase.ScaleX * (double)docToBase.ScaleY - docToBase.SkewX * (double)docToBase.SkewY);
+        return det > 0 ? (float)Math.Sqrt(det) : 1f;
+    }
+
     public async Task<float> ExportSheetPngAsync(string outputPath, SKSize baseSizePoints, float dpi,
         IReadOnlyList<ExportLayer> layers, IProgress<double>? progress = null, CancellationToken ct = default)
     {
@@ -73,25 +90,34 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
             Math.Max(1, (int)Math.Round(baseSizePoints.Width * scale)),
             Math.Max(1, (int)Math.Round(baseSizePoints.Height * scale)));
 
-        int bandHeightPx = Math.Max(256, (int)(BandPixels / size.Width));
-        int bandCount = (size.Height + bandHeightPx - 1) / bandHeightPx;
+        // Vraies tuiles X×Y (dev-senior SEN2-01) : une bande pleine largeur d'un A0 à 300 DPI
+        // dépasserait MaxRenderEdge et PDFium rendrait à un DPI dégradé silencieusement —
+        // chaque tuile doit rester sous le plafond d'arête, marges de jointure comprises.
+        int tileWidthPx = Math.Min(size.Width,
+            (int)(MaxRegionEdgePx - 4 * BandSeamMarginPoints * scale - 8));
+        int tileHeightPx = Math.Max(256, (int)(BandPixels / tileWidthPx));
+        int cols = (size.Width + tileWidthPx - 1) / tileWidthPx;
+        int rows = (size.Height + tileHeightPx - 1) / tileHeightPx;
+        int tileCount = cols * rows;
 
         ct.ThrowIfCancellationRequested();
         using var sheet = new SKBitmap(new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Premul));
         using (var sheetCanvas = new SKCanvas(sheet))
         {
-            for (int band = 0; band < bandCount; band++)
+            for (int tile = 0; tile < tileCount; tile++)
             {
                 ct.ThrowIfCancellationRequested();
-                int y0 = band * bandHeightPx;
-                int bandH = Math.Min(bandHeightPx, size.Height - y0);
+                int x0 = tile % cols * tileWidthPx;
+                int y0 = tile / cols * tileHeightPx;
+                int tileW = Math.Min(tileWidthPx, size.Width - x0);
+                int tileH = Math.Min(tileHeightPx, size.Height - y0);
 
-                // Emprise de la bande en points du plan de base, avec marge anti-jointure.
-                var bandRectPoints = new SKRect(0, y0 / scale, baseSizePoints.Width, (y0 + bandH) / scale);
-                bandRectPoints.Inflate(0, BandSeamMarginPoints);
+                // Emprise de la tuile en points du plan de base, avec marge anti-jointure.
+                var tileRectPoints = new SKRect(x0 / scale, y0 / scale, (x0 + tileW) / scale, (y0 + tileH) / scale);
+                tileRectPoints.Inflate(BandSeamMarginPoints, BandSeamMarginPoints);
 
                 var infos = new List<LayerRenderInfo>(layers.Count);
-                var bandImages = new List<SKImage>(layers.Count);
+                var tileImages = new List<SKImage>(layers.Count);
                 try
                 {
                     foreach (var layer in layers)
@@ -99,18 +125,19 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
                         if (layer.Strength <= 0f || !layer.DocToBase.TryInvert(out var baseToDoc))
                             continue;
 
-                        var region = baseToDoc.MapRect(bandRectPoints);
+                        var region = baseToDoc.MapRect(tileRectPoints);
                         region.Inflate(BandSeamMarginPoints, BandSeamMarginPoints);
                         region.Intersect(new SKRect(0, 0, layer.PageSizePoints.Width, layer.PageSizePoints.Height));
                         if (region.Width <= 0 || region.Height <= 0)
-                            continue; // le calque ne couvre pas cette bande
+                            continue; // le calque ne couvre pas cette tuile
 
                         var raster = await pdfService.RenderRegionAsync(
-                            layer.FilePath, layer.PageIndex, region, effectiveDpi, ct).ConfigureAwait(false);
+                            layer.FilePath, layer.PageIndex, region,
+                            effectiveDpi * LayerDpiFactor(layer.DocToBase), ct).ConfigureAwait(false);
                         raster.SetImmutable();
                         var image = SKImage.FromBitmap(raster);
                         raster.Dispose();
-                        bandImages.Add(image);
+                        tileImages.Add(image);
 
                         // L'échelle réelle se mesure sur les pixels rendus, par axe (arrondi entier du DPI).
                         infos.Add(new LayerRenderInfo(
@@ -125,18 +152,18 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
                     }
 
                     ct.ThrowIfCancellationRequested();
-                    var bandView = SKMatrix.CreateTranslation(0, -y0).PreConcat(SKMatrix.CreateScale(scale, scale));
-                    using var bandBitmap = compositor.ComposeToBitmap(new SKSizeI(size.Width, bandH), bandView, infos);
-                    // Blit 1:1 : aucun ré-échantillonnage, la bande tombe pile sur ses lignes.
-                    sheetCanvas.DrawBitmap(bandBitmap, new SKPoint(0, y0), new SKSamplingOptions(SKFilterMode.Nearest));
+                    var tileView = SKMatrix.CreateTranslation(-x0, -y0).PreConcat(SKMatrix.CreateScale(scale, scale));
+                    using var tileBitmap = compositor.ComposeToBitmap(new SKSizeI(tileW, tileH), tileView, infos);
+                    // Blit 1:1 : aucun ré-échantillonnage, la tuile tombe pile sur ses pixels.
+                    sheetCanvas.DrawBitmap(tileBitmap, new SKPoint(x0, y0), new SKSamplingOptions(SKFilterMode.Nearest));
                 }
                 finally
                 {
-                    foreach (var image in bandImages)
+                    foreach (var image in tileImages)
                         image.Dispose();
                 }
 
-                progress?.Report((band + 1) / (double)bandCount);
+                progress?.Report((tile + 1) / (double)tileCount);
             }
         }
 

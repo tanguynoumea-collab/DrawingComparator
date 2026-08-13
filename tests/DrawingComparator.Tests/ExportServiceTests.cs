@@ -116,6 +116,75 @@ public class ExportServiceTests
     }
 
     [Fact]
+    public void MaxRegionEdge_MirrorsPdfServiceBudget()
+    {
+        // Le miroir CA1416 ne doit jamais dériver du vrai plafond du service.
+        Assert.Equal(PdfDocumentService.MaxRenderEdge, ExportService.MaxRegionEdgePx);
+    }
+
+    [Fact]
+    public async Task ExportSheet_WideSheet_TilesInX_SoNoRegionHitsTheEdgeCap()
+    {
+        // SEN2-01 : sur un A0 (2384 pt de large), une bande pleine largeur à 300 DPI ferait
+        // 9 933 px > MaxRenderEdge → PDFium dégraderait le DPI en silence. Les tuiles X×Y
+        // doivent garder CHAQUE région sous le plafond d'arête au DPI demandé.
+        var fake = new FakePdfDocumentService { PageSize = new SKSize(2384, 3370) }; // A0 portrait
+        var service = MakeService(fake);
+        var layers = new List<ExportLayer> { new("base.pdf", 0, fake.PageSize, SKMatrix.Identity, LayerTint.Red, 1f) };
+        string path = TempPng();
+        try
+        {
+            float dpi = await service.ExportSheetPngAsync(path, fake.PageSize, 300, layers);
+            Assert.Equal(300f, dpi, 0.5f);
+
+            lock (fake.RegionRequests)
+            {
+                Assert.True(fake.RegionRequests.Count >= 2, "l'A0 doit être découpé en plusieurs tuiles");
+                Assert.All(fake.RegionRequests, r =>
+                {
+                    float edgePx = Math.Max(r.Region.Width, r.Region.Height) * r.Dpi / 72f;
+                    Assert.True(edgePx <= PdfDocumentService.MaxRenderEdge + 1,
+                        $"région {r.Region.Width:0}×{r.Region.Height:0} pt à {r.Dpi} DPI = {edgePx:0} px > plafond");
+                });
+            }
+
+            using var decoded = SKBitmap.Decode(path);
+            Assert.Equal((int)Math.Round(2384 * 300f / 72f), decoded.Width);
+            Assert.Equal((int)Math.Round(3370 * 300f / 72f), decoded.Height);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ExportSheet_ScaledRevision_IsRenderedAtCompensatedDpi()
+    {
+        // SEN2-04 : un révisé calé à ×2 (1:50 → 1:100) doit être rendu à DPI×2 dans son
+        // propre espace, sinon il arrive flou une fois agrandi vers la base.
+        var fake = new FakePdfDocumentService { PageSize = new SKSize(400, 400) };
+        var service = MakeService(fake);
+        var layers = new List<ExportLayer>
+        {
+            new("rev.pdf", 0, fake.PageSize, SKMatrix.CreateScale(2f, 2f), LayerTint.Blue, 1f),
+        };
+        string path = TempPng();
+        try
+        {
+            await service.ExportSheetPngAsync(path, new SKSize(800, 800), 144, layers);
+            lock (fake.RegionRequests)
+            {
+                Assert.All(fake.RegionRequests, r => Assert.Equal(288f, r.Dpi, 0.5f));
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task ExportSheet_Cancelled_CreatesNoFile()
     {
         var service = MakeService();

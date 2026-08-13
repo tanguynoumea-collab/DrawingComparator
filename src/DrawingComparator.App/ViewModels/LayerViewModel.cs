@@ -287,6 +287,8 @@ public sealed partial class LayerViewModel : ObservableObject, IDisposable
     private void ClearFile()
     {
         _renderCts?.Cancel();
+        _renderCts?.Dispose();
+        _renderCts = null;
         if (FilePath is not null)
             _pdfService.Release(FilePath);
         FilePath = null;

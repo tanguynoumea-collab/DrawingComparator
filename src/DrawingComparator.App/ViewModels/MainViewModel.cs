@@ -741,20 +741,25 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (ComputeVisibleRegions() is not { } regions)
                 return;
 
+            // Le révisé s'affiche à travers AlignMatrix : sa tuile doit être rendue à
+            // DPI × √|det| dans SON espace pour être nette une fois transformée
+            // (dev-senior SEN2-04 — plans à échelles différentes, ex. 1:50 vs 1:100).
+            float revisionDpi = regions.ViewDpi * ExportService.LayerDpiFactor(AlignMatrix);
+
             bool changed = false;
-            foreach (var (layer, region) in new[]
+            foreach (var (layer, region, dpi) in new[]
             {
-                (BaseLayer, regions.BaseRegion),
-                (RevisionLayer, regions.RevRegion),
+                (BaseLayer, regions.BaseRegion, regions.ViewDpi),
+                (RevisionLayer, regions.RevRegion, revisionDpi),
             })
             {
                 if (layer.Raster is null)
                     continue;
                 // En dessous du DPI de l'overview, le chemin mipmap actuel est déjà optimal.
-                if (regions.ViewDpi <= layer.OverviewDpi * 1.02f)
+                if (dpi <= layer.OverviewDpi * 1.02f)
                     continue;
                 IsSharpening = true;
-                changed |= await layer.RenderDetailAsync(region, regions.ViewDpi, ct);
+                changed |= await layer.RenderDetailAsync(region, dpi, ct);
             }
 
             if (changed && !ct.IsCancellationRequested)

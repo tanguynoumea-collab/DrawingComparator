@@ -3,8 +3,8 @@
   "projet": "DrawingComparator",
   "version_courante": "0.1.0",
   "route": "full",
-  "phase": "GSD",
-  "phase_status": "corrections_dev_council_p1",
+  "phase": "PUBLICATION",
+  "phase_status": "attente_checkpoint_3_go_publication",
   "cycle": {
     "numero": 2,
     "demarre_le": "2026-08-13",
@@ -30,7 +30,7 @@
   "iterations": {
     "design_review": 1,
     "design_review_max": 3,
-    "dev_council": 1,
+    "dev_council": 2,
     "dev_council_max": 3
   },
   "checkpoints": {
@@ -74,6 +74,8 @@
     "2026-08-13 — GSD cycle 2 : 27 tâches C01-C27 done, DoD 100 % cochée. ✅ GATE TESTS : build 0 warning, format OK, 69/69 tests (dont spike région sur vrais PDF, export tuilé, affine, projets). Log .zeus/reports/gate-cycle2-2026-08-13.log. Commit unique cycle 2. ✅ → DESIGN-REVIEW",
     "2026-08-13 — DESIGN-REVIEW n°2 (captures réelles via --screenshot, Reprendre seedé) : 1 BLOQUANT (composite blanc sans document → Reprendre illisible) corrigé en boucle courte (itération design_review 1/3) + bug HasAnyDocument/ClearFile attrapé ; re-gate 69/69, re-capture conforme ; 2 mineurs → roadmap ; états non-capturables consignés pour l'UAT. Rapport .zeus/reports/design-review-2.md, baseline docs/ui-baseline/cycle2/. ✅ → DEV-COUNCIL",
     "2026-08-13 — DEV-COUNCIL n°2 (8 auditeurs + sceptique + cross-challenge 4 paires + arbitrage 3 juges) : 1 Bloquant (DON2-01 écriture .dcproj non atomique), 3 Majeurs (SEC2-01 UNC, TST2-01 SaveProject non testé, ARC2-01 extraction AlignmentSession arbitrée unanime), ~18 Mineurs, ~20 Infos, 1 invalidé, 9 sévérités abaissées. Fix unique identifié : IProjectStore atomique+validé. Rapport .zeus/reports/dev-council-2.md. ⏸ ATTENTE CHECKPOINT 2 : triage utilisateur",
-    "2026-08-13 — ✅ CHECKPOINT 2 : triage utilisateur = « corrige P1 + extraction » (IProjectStore atomique+validé, politique UNC, FIA2-04/02, version 0.2.0+garde CI, extraction AlignmentSession). Itération dev_council 1/3. P2/P3 → roadmap. → GSD (boucle corrections)"
+    "2026-08-13 — ✅ CHECKPOINT 2 : triage utilisateur = « corrige P1 + extraction » (IProjectStore atomique+validé, politique UNC, FIA2-04/02, version 0.2.0+garde CI, extraction AlignmentSession). Itération dev_council 1/3. P2/P3 → roadmap. → GSD (boucle corrections)",
+    "2026-08-13 — Corrections P1 + extraction livrées (commit d9b2e82) : re-gate 75/75 + format OK, re-vérification ciblée 7/7 FERMÉS (DON2-01, DON2-02+SEC2-02, SEC2-01, TST2-01, ARC2-01 → AlignmentSession 399 l. / MainViewModel 862 l., FIA2-04+02, PKG2-01+SEC2-06). AUDIT_POINTS rafraîchi (PERT2-06). ✅ DEV-COUNCIL clos → DEV-SENIOR",
+    "2026-08-13 — DEV-SENIOR n°2 : GO AVEC RÉSERVES — 4 Majeurs manqués par le council (SEN2-01 export A0 à 247 DPI réels, SEN2-02 .dcproj sans FilePath crash hors frontière, SEN2-03 Échap détruit le calage committé pendant la pose du contrôle, SEN2-04 DPI du révisé sans compensation d'échelle) corrigés immédiatement (itération 2/3) + SEN2-06 partiel. Re-gate 81/81, format OK. Verdict final GO. Rapport .zeus/reports/dev-senior-2.md. ⏸ ATTENTE CHECKPOINT 3 : go/no-go publication v0.2.0"
   ]
 }

@@ -285,6 +285,31 @@ public class AlignmentWorkflowTests
     }
 
     [Fact]
+    public async Task Escape_DuringControlPointPosing_KeepsCommittedAlignment()
+    {
+        // SEN2-03 : ouvrir « + point de contrôle » puis Échap ne doit PAS détruire la
+        // similitude committée — retour à l'état Aligned, matrice intacte.
+        var dialogs = new StubDialogs();
+        var vm = await LoadBothPlansAsync(dialogs);
+        vm.StartAlignmentCommand.Execute(null);
+        FourAlignmentClicks(vm, new SKPoint(150, 120), new SKPoint(950, 680));
+        var committed = vm.AlignMatrix;
+
+        vm.AddControlPointCommand.Execute(null);
+        Assert.Equal(AlignmentStep.ControlOnRevision, vm.AlignmentStep);
+        vm.CancelAlignmentCommand.Execute(null);
+
+        Assert.Equal(AlignmentStep.Aligned, vm.AlignmentStep);
+        Assert.Equal(committed, vm.AlignMatrix);
+        Assert.True(vm.HasAlignment);
+
+        // Un second Échap (depuis Aligned) referme le bandeau en conservant toujours le calage.
+        vm.CancelAlignmentCommand.Execute(null);
+        Assert.False(vm.IsAligning);
+        Assert.Equal(committed, vm.AlignMatrix);
+    }
+
+    [Fact]
     public async Task NudgeRevision_TranslatesInBaseMillimetres_PreservingScaleAndRotation()
     {
         // Item 3 : les flèches translatent le plan RÉVISÉ en mm papier de la BASE,

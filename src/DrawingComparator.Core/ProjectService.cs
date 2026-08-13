@@ -137,6 +137,11 @@ public static class ProjectSerializer
     /// </summary>
     private static ComparisonProject Validate(ComparisonProject project, string name)
     {
+        // SEN2-02 : le binding constructeur de System.Text.Json accepte un champ manquant
+        // (FilePath = null) — le rejeter ICI, jamais en aval par ArgumentNullException.
+        if (string.IsNullOrWhiteSpace(project.Base?.FilePath) || string.IsNullOrWhiteSpace(project.Revision?.FilePath))
+            throw new ProjectLoadException($"« {name} » ne référence pas ses deux plans PDF.");
+
         var m = project.Align;
         ReadOnlySpan<float> terms = [m.ScaleX, m.SkewX, m.TransX, m.SkewY, m.ScaleY, m.TransY];
         foreach (float t in terms)
@@ -144,6 +149,11 @@ public static class ProjectSerializer
             if (!float.IsFinite(t))
                 throw new ProjectLoadException($"« {name} » contient une matrice de calage invalide (valeur non finie).");
         }
+        // Une matrice singulière (déterminant ~0) rendrait le calque révisé muet et fausserait
+        // les régions de tuile — refusée à la frontière, avec un message actionnable.
+        double det = m.ScaleX * (double)m.ScaleY - m.SkewX * (double)m.SkewY;
+        if (Math.Abs(det) < 1e-9)
+            throw new ProjectLoadException($"« {name} » contient une matrice de calage invalide (dégénérée).");
 
         static ProjectLayer Clamp(ProjectLayer layer) => layer with
         {

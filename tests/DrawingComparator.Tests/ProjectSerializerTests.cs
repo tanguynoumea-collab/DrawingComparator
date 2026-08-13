@@ -195,6 +195,53 @@ public class ProjectSerializerTests
     }
 
     [Fact]
+    public void Load_MissingFilePath_IsRejectedWithUserMessage()
+    {
+        // SEN2-02 : le binding constructeur accepte un champ absent (FilePath = null) —
+        // la frontière doit le refuser, jamais un ArgumentNullException en aval.
+        string path = TempProject();
+        try
+        {
+            File.WriteAllText(path, """
+                {
+                  "SchemaVersion": 1,
+                  "Base": { "Page": 1, "OpacityPercent": 100 },
+                  "Revision": { "FilePath": "b.pdf", "Page": 1, "OpacityPercent": 100 }
+                }
+                """);
+            var ex = Assert.Throws<ProjectLoadException>(() => ProjectSerializer.Load(path));
+            Assert.Contains("deux plans", ex.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Load_SingularMatrix_IsRejectedWithUserMessage()
+    {
+        string path = TempProject();
+        try
+        {
+            File.WriteAllText(path, """
+                {
+                  "SchemaVersion": 1,
+                  "Base": { "FilePath": "a.pdf", "Page": 1, "OpacityPercent": 100 },
+                  "Revision": { "FilePath": "b.pdf", "Page": 1, "OpacityPercent": 100 },
+                  "Align": { "ScaleX": 0, "SkewX": 0, "TransX": 10, "SkewY": 0, "ScaleY": 0, "TransY": 5 }
+                }
+                """);
+            var ex = Assert.Throws<ProjectLoadException>(() => ProjectSerializer.Load(path));
+            Assert.Contains("dégénérée", ex.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Load_ClampsHostileValues()
     {
         string path = TempProject();

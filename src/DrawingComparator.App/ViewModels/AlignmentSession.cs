@@ -152,6 +152,14 @@ public sealed partial class AlignmentSession : ObservableObject
             Finish();
             return;
         }
+        if (AlignmentStep is AlignmentStep.ControlOnRevision or AlignmentStep.ControlOnBase)
+        {
+            // Le calage committé par les 4 clics n'est PAS remis en cause : Échap referme
+            // seulement la pose du point de contrôle (dev-senior SEN2-03).
+            AlignmentStep = AlignmentStep.Aligned;
+            AlignmentInlineError = null;
+            return;
+        }
         Matrix = _beforeSession;
         AlignmentStep = AlignmentStep.Inactive;
         AlignmentInlineError = null;

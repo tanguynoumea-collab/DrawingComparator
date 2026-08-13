@@ -27,35 +27,117 @@
                VerticalAlignment="Top"
                RenderOptions.BitmapScalingMode="Linear" />
 
-        <!-- Bandeau du viseur de calage (élément signature, DESIGN_PLAN §6) -->
-        <Border VerticalAlignment="Top"
-                HorizontalAlignment="Stretch"
-                Background="{StaticResource BrushSurface}"
-                Padding="{StaticResource SpaceM}"
-                Visibility="{Binding IsAligning, Converter={StaticResource BoolToVisibility}}">
-            <StackPanel>
-                <WrapPanel>
-                    <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step1Glyph}" />
-                    <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step2Glyph}" />
-                    <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step3Glyph}" />
-                    <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step4Glyph}" />
-                </WrapPanel>
-                <TextBlock Text="{Binding StepInstruction}"
-                           Foreground="{StaticResource BrushTextPrimary}"
-                           FontSize="{StaticResource FontSizeBody}"
-                           FontWeight="SemiBold"
-                           Margin="0,8,0,0" />
-                <TextBlock Text="Échap pour annuler · Retour arrière pour re-poser le point précédent"
-                           Foreground="{StaticResource BrushTextSecondary}"
-                           FontSize="{StaticResource FontSizeCaption}"
-                           Margin="0,4,0,0" />
-                <TextBlock Text="{Binding AlignmentInlineError}"
-                           Foreground="{StaticResource BrushDanger}"
-                           FontSize="{StaticResource FontSizeCaption}"
-                           Margin="0,4,0,0"
-                           Visibility="{Binding AlignmentInlineError, Converter={StaticResource NullToCollapsed}}" />
-            </StackPanel>
-        </Border>
+        <!-- Scrim du mode calage (item 4) : voile plein canvas à 60 %, entrée 150 ms,
+             sortie 200 ms — le « clac » du calage qui s'applique (DESIGN_PLAN §7/§11.3).
+             La loupe compose par-dessus, à pleine lumière : c'est elle qui perce le voile. -->
+        <Rectangle x:Name="Scrim"
+                   Fill="{StaticResource BrushBackground}"
+                   Opacity="0"
+                   IsHitTestVisible="False">
+            <Rectangle.Style>
+                <Style TargetType="Rectangle">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPosingPoint}" Value="True">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         To="0.6"
+                                                         Duration="0:0:0.150">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut" />
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         To="0"
+                                                         Duration="0:0:0.200">
+                                            <DoubleAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut" />
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.ExitActions>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Rectangle.Style>
+        </Rectangle>
+
+        <StackPanel VerticalAlignment="Top">
+            <!-- Bandeau du viseur de calage (élément signature, DESIGN_PLAN §6, étape 5 §11.4) -->
+            <Border Background="{StaticResource BrushSurface}"
+                    Padding="{StaticResource SpaceM}"
+                    Visibility="{Binding IsAligning, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <WrapPanel>
+                        <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step1Glyph}" />
+                        <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step2Glyph}" />
+                        <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step3Glyph}" />
+                        <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step4Glyph}" />
+                        <TextBlock Style="{StaticResource StepChip}"
+                                   FontFamily="{StaticResource FontData}"
+                                   Text="{Binding ResidualText}"
+                                   Visibility="{Binding ResidualText, Converter={StaticResource NullToCollapsed}}" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding StepInstruction}"
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               FontWeight="SemiBold"
+                               Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,8,0,0"
+                                Visibility="{Binding IsAlignmentCommitted, Converter={StaticResource BoolToVisibility}}">
+                        <Button Content="+ Point de contrôle (facultatif)"
+                                Command="{Binding AddControlPointCommand}"
+                                MinHeight="32" />
+                        <Button Content="Terminer"
+                                Command="{Binding FinishAlignmentCommand}"
+                                Background="{StaticResource BrushAccent}"
+                                Foreground="{StaticResource BrushAccentText}"
+                                FontWeight="SemiBold"
+                                MinHeight="32"
+                                Margin="8,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="Échap pour annuler · Retour arrière pour re-poser le point précédent"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding AlignmentInlineError}"
+                               Foreground="{StaticResource BrushDanger}"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Margin="0,4,0,0"
+                               Visibility="{Binding AlignmentInlineError, Converter={StaticResource NullToCollapsed}}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Bandeau « page semble vide » (item 9) : fin, fermable, jamais un dialogue -->
+            <Border Background="{StaticResource BrushSurface}"
+                    Padding="16,6"
+                    Visibility="{Binding EmptyPageMessage, Converter={StaticResource NullToCollapsed}}">
+                <Grid>
+                    <TextBlock Text="{Binding EmptyPageMessage}"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               VerticalAlignment="Center" />
+                    <Button Content="✕"
+                            Command="{Binding DismissEmptyPageBannerCommand}"
+                            HorizontalAlignment="Right"
+                            MinWidth="24"
+                            MinHeight="24"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="{StaticResource BrushTextSecondary}" />
+                </Grid>
+            </Border>
+        </StackPanel>
 
         <!-- Loupe ×4 du viseur -->
         <Canvas IsHitTestVisible="False">
@@ -77,5 +159,21 @@
                 </Grid>
             </Border>
         </Canvas>
+
+        <!-- Anneau de focus clavier : les flèches d'ajustement (item 3) exigent le focus canvas -->
+        <Border BorderThickness="2"
+                IsHitTestVisible="False">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                     Value="True">
+                            <Setter Property="BorderBrush" Value="{StaticResource BrushAccent}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+        </Border>
     </Grid>
 </UserControl>

@@ -56,11 +56,28 @@ public partial class App : Application
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
             LogCrash(args.Exception);
 
+        // Thème light : détection système AU DÉMARRAGE uniquement (SEN-13, DESIGN_PLAN §11.9).
+        // Chrome seul — le canvas multiply sur fond blanc est déjà light par construction.
+        if (IsSystemLightTheme())
+        {
+            Resources.MergedDictionaries[0] = new Wpf.Ui.Markup.ThemesDictionary
+            {
+                Theme = Wpf.Ui.Appearance.ApplicationTheme.Light,
+            };
+            Resources.MergedDictionaries[2] = new ResourceDictionary
+            {
+                Source = new Uri("Themes/Tokens.Light.xaml", UriKind.Relative),
+            };
+        }
+
         var services = new ServiceCollection();
         services.AddSingleton<IPdfDocumentService, PdfDocumentService>();
         services.AddSingleton<IComparisonCompositor, ComparisonCompositor>();
-        services.AddSingleton<IExportService, ExportService>();
+        services.AddSingleton<IExportService>(sp => new ExportService(
+            sp.GetRequiredService<IComparisonCompositor>(),
+            sp.GetRequiredService<IPdfDocumentService>()));
         services.AddSingleton<IUserDialogs, UserDialogs>();
+        services.AddSingleton<IRecentProjectsService, RecentProjectsService>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
         _services = services.BuildServiceProvider();
@@ -86,6 +103,9 @@ public partial class App : Application
         bool screenshotMode = screenshotIndex >= 0 && screenshotIndex + 1 < args.Length;
         try
         {
+            if (args.FirstOrDefault(a => a.EndsWith(ProjectSerializer.FileExtension, StringComparison.OrdinalIgnoreCase)) is { } projectPath)
+                await vm.OpenProjectAsync(projectPath);
+
             var pdfPaths = args.Where(a => a.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)).ToArray();
             if (pdfPaths.Length > 0)
                 await vm.LoadIntoLayerAsync(vm.BaseLayer, pdfPaths[0]);
@@ -135,13 +155,35 @@ public partial class App : Application
         base.OnExit(e);
     }
 
+    /// <summary>Windows : AppsUseLightTheme (Personalize). En cas de doute, sombre — le thème du plan.</summary>
+    private static bool IsSystemLightTheme()
+    {
+        try
+        {
+            return Microsoft.Win32.Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "AppsUseLightTheme", 0) is int value && value != 0;
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or System.IO.IOException)
+        {
+            return false;
+        }
+    }
+
     private static string CrashLogPath
         => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "drawingcomparator-crash.log");
+
+    /// <summary>Plafond du crash log avant rotation (SEC-05) : au-delà, il bascule en .old (un seul historique).</summary>
+    private const long CrashLogMaxBytes = 512 * 1024;
 
     private static void LogCrash(Exception? ex)
     {
         try
         {
+            var info = new System.IO.FileInfo(CrashLogPath);
+            if (info.Exists && info.Length > CrashLogMaxBytes)
+                System.IO.File.Move(CrashLogPath, CrashLogPath + ".old", overwrite: true);
+
             System.IO.File.AppendAllText(CrashLogPath,
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\n\n");
         }

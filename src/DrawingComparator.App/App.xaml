@@ -16,6 +16,8 @@
             <local:NullToCollapsedConverter x:Key="NullToCollapsed" />
             <local:BoolToCollapsedConverter x:Key="BoolToCollapsed" />
             <local:TintToBrushConverter x:Key="TintToBrush" />
+            <local:InverseBoolConverter x:Key="InverseBool" />
+            <local:DoubleEqualsConverter x:Key="DoubleEquals" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows.Media.Imaging;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -10,7 +11,7 @@ using SkiaSharp;
 
 namespace DrawingComparator.App.ViewModels;
 
-/// <summary>Étapes de l'outil de calage 2 points (DESIGN_PLAN §3 « mode calage »).</summary>
+/// <summary>Étapes de l'outil de calage (DESIGN_PLAN §3 « mode calage », §11.4 point de contrôle).</summary>
 public enum AlignmentStep
 {
     Inactive,
@@ -18,6 +19,11 @@ public enum AlignmentStep
     Point1OnBase,
     Point2OnRevision,
     Point2OnBase,
+
+    /// <summary>Calage appliqué, bandeau encore ouvert : point de contrôle facultatif ou Terminer.</summary>
+    Aligned,
+    ControlOnRevision,
+    ControlOnBase,
 }
 
 public sealed partial class MainViewModel : ObservableObject, IDisposable
@@ -29,9 +35,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private const float MinZoomScale = 0.02f;
     private const float MaxZoomScale = 60f;
 
+    /// <summary>Délai de stabilisation de la vue avant de rendre la tuile nette (pipeline v2).</summary>
+    private const int DetailDebounceMs = 150;
+
+    /// <summary>Marge de la tuile autour du viewport (absorbe le pan avant re-rendu).</summary>
+    private const float DetailRegionInflate = 0.25f;
+
     private readonly IComparisonCompositor _compositor;
     private readonly IExportService _exportService;
     private readonly IUserDialogs _dialogs;
+    private readonly IRecentProjectsService _recents;
 
     private readonly List<SKImage> _retiredBitmaps = [];
     private int _composersInFlight;
@@ -39,15 +52,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _composeDirty;
 
     // Points de calage capturés, dans le repère PDF de leur plan respectif.
-    private SKPoint _p1, _q1, _p2;
+    private SKPoint _p1, _q1, _p2, _q2, _p3, _q3;
+    private bool _hasControlPoint;
     private SKMatrix _alignBeforeSession = SKMatrix.Identity;
+    private SKMatrix _alignAfterAnchor = SKMatrix.Identity;
+
+    private CancellationTokenSource? _detailCts;
+    private CancellationTokenSource? _snackbarCts;
 
     public MainViewModel(IPdfDocumentService pdfService, IComparisonCompositor compositor,
-        IExportService exportService, IUserDialogs dialogs)
+        IExportService exportService, IUserDialogs dialogs, IRecentProjectsService recents)
     {
         _compositor = compositor;
         _exportService = exportService;
         _dialogs = dialogs;
+        _recents = recents;
 
         BaseLayer = new LayerViewModel(isBase: true, pdfService, OnLayerErrorAsync, OnLayerChanged, RetireBitmap)
         {
@@ -112,11 +131,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // ── Calage ────────────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAligning), nameof(StepInstruction),
-        nameof(Step1Glyph), nameof(Step2Glyph), nameof(Step3Glyph), nameof(Step4Glyph))]
+    [NotifyPropertyChangedFor(nameof(IsAligning), nameof(IsPosingPoint), nameof(IsAlignmentCommitted),
+        nameof(StepInstruction), nameof(Step1Glyph), nameof(Step2Glyph), nameof(Step3Glyph), nameof(Step4Glyph))]
     private AlignmentStep _alignmentStep = AlignmentStep.Inactive;
 
     public bool IsAligning => AlignmentStep != AlignmentStep.Inactive;
+
+    /// <summary>Un clic est attendu sur le canvas (scrim 60 % actif, item 4 — pas en état « Aligned »).</summary>
+    public bool IsPosingPoint => AlignmentStep is AlignmentStep.Point1OnRevision or AlignmentStep.Point1OnBase
+        or AlignmentStep.Point2OnRevision or AlignmentStep.Point2OnBase
+        or AlignmentStep.ControlOnRevision or AlignmentStep.ControlOnBase;
+
+    /// <summary>Le calage est appliqué, le bandeau propose le point de contrôle et Terminer (§11.4).</summary>
+    public bool IsAlignmentCommitted => AlignmentStep == AlignmentStep.Aligned;
 
     public string Step1Glyph => StepGlyph(1, AlignmentStep.Point1OnRevision, "Point du RÉVISÉ");
     public string Step2Glyph => StepGlyph(2, AlignmentStep.Point1OnBase, "Même point sur la BASE");
@@ -137,6 +164,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         AlignmentStep.Point1OnBase => "Cliquez le même point sur le plan de BASE — il servira d'ancrage",
         AlignmentStep.Point2OnRevision => "Cliquez un second point sur le plan RÉVISÉ, loin du premier (ex. le bout du mur)",
         AlignmentStep.Point2OnBase => "Cliquez le même point sur le plan de BASE — il fixe l'échelle et la rotation",
+        AlignmentStep.Aligned => "Calage appliqué — posez un point de contrôle pour mesurer l'erreur, ou terminez",
+        AlignmentStep.ControlOnRevision => "Cliquez un point de VÉRIFICATION sur le plan RÉVISÉ, loin des deux premiers",
+        AlignmentStep.ControlOnBase => "Cliquez le même point sur le plan de BASE — l'écart mesuré s'affichera",
         _ => string.Empty,
     };
 
@@ -148,6 +178,100 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private string? _alignmentSummary;
 
     public bool HasAlignment => AlignmentSummary is not null;
+
+    /// <summary>Erreur résiduelle du point de contrôle, en mm papier de la base (null tant qu'aucun contrôle).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResidualText))]
+    private double? _residualMm;
+
+    public string? ResidualText => ResidualMm is { } r ? $"résiduel {r:0.00} mm" : null;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanUseAffine))]
+    private bool _hasControlPointForDisplay;
+
+    public bool CanUseAffine => HasControlPointForDisplay;
+
+    /// <summary>Mode affine 3 points : opt-in explicite, jamais de bascule silencieuse (SEN-01).</summary>
+    [ObservableProperty]
+    private bool _isAffineMode;
+
+    partial void OnIsAffineModeChanged(bool value) => RecomputeFromPairs();
+
+    /// <summary>Avertissement d'anisotropie (mode affine) — une information métier, pas une erreur.</summary>
+    [ObservableProperty]
+    private string? _anisotropyWarning;
+
+    // ── Ajustement fin au clavier (item 3) ────────────────────────────────────
+
+    /// <summary>Pas de translation des flèches, en millimètres papier de la BASE (0,1 / 0,5 / 2).</summary>
+    [ObservableProperty]
+    private double _nudgeStepMm = 0.5;
+
+    public static IReadOnlyList<double> NudgeStepChoices { get; } = [0.1, 0.5, 2.0];
+
+    public bool CanNudge => HasAlignment && !IsPosingPoint;
+
+    /// <summary>
+    /// Translate le plan RÉVISÉ de (dx, dy) pas dans le repère de la BASE — composition à gauche
+    /// par une translation pure : l'échelle et la rotation du calage sont intactes.
+    /// Le pas effectif peut être forcé par Maj (pas fin) / Ctrl (pas large).
+    /// </summary>
+    public void NudgeRevision(int dxSteps, int dySteps, double? overrideStepMm = null)
+    {
+        if (!CanNudge)
+            return;
+        double mm = overrideStepMm ?? NudgeStepMm;
+        float pt = (float)(mm * 72.0 / 25.4);
+        AlignMatrix = SKMatrix.CreateTranslation(dxSteps * pt, dySteps * pt).PreConcat(AlignMatrix);
+        UpdateResidual();
+        UpdateAlignmentSummary();
+        RequestRecompose();
+    }
+
+    // ── Snackbar (item 5) ─────────────────────────────────────────────────────
+
+    [ObservableProperty]
+    private string? _snackbarMessage;
+
+    [ObservableProperty]
+    private bool _snackbarIsDanger;
+
+    [ObservableProperty]
+    private string? _snackbarRevealPath;
+
+    private void ShowSnackbar(string message, string? revealPath = null, bool danger = false)
+    {
+        SnackbarMessage = message;
+        SnackbarRevealPath = revealPath;
+        SnackbarIsDanger = danger;
+        _snackbarCts?.Cancel();
+        _snackbarCts?.Dispose();
+        _snackbarCts = new CancellationTokenSource();
+        _ = AutoHideSnackbarAsync(_snackbarCts.Token);
+    }
+
+    private async Task AutoHideSnackbarAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(6), ct);
+            SnackbarMessage = null;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    [RelayCommand]
+    private void DismissSnackbar() => SnackbarMessage = null;
+
+    [RelayCommand]
+    private void RevealInExplorer()
+    {
+        if (SnackbarRevealPath is { } path && File.Exists(path))
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+    }
 
     // ── Barre de statut ───────────────────────────────────────────────────────
 
@@ -163,6 +287,33 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _statusMessage = "";
 
+    /// <summary>La tuile nette est en cours de rendu (FIA-07) — « ⟳ netteté… » en barre de statut.</summary>
+    [ObservableProperty]
+    private bool _isSharpening;
+
+    // ── Bandeau « page semble vide » (item 9) ─────────────────────────────────
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EmptyPageMessage))]
+    private bool _emptyPageBannerDismissed;
+
+    public string? EmptyPageMessage
+    {
+        get
+        {
+            if (EmptyPageBannerDismissed || BaseLayer is null || RevisionLayer is null)
+                return null;
+            if (BaseLayer.PageLooksEmpty)
+                return "La page du plan de BASE semble vide — vérifiez le n° de page.";
+            if (RevisionLayer.PageLooksEmpty)
+                return "La page du plan RÉVISÉ semble vide — vérifiez le n° de page.";
+            return null;
+        }
+    }
+
+    [RelayCommand]
+    private void DismissEmptyPageBanner() => EmptyPageBannerDismissed = true;
+
     // ── Chargement ────────────────────────────────────────────────────────────
 
     public async Task LoadIntoLayerAsync(LayerViewModel layer, string path)
@@ -173,6 +324,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         UpdatePagesText();
         StartAlignmentCommand.NotifyCanExecuteChanged();
         ExportCommand.NotifyCanExecuteChanged();
+        SaveProjectCommand.NotifyCanExecuteChanged();
+        SaveProjectAsCommand.NotifyCanExecuteChanged();
         if (firstDocument && HasAnyDocument)
             FitToWindow();
     }
@@ -185,13 +338,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private void OnLayerChanged()
     {
+        // Les setters des initialiseurs de calques notifient avant la fin du constructeur.
+        if (BaseLayer is null || RevisionLayer is null)
+            return;
+        EmptyPageBannerDismissed = false;
+        OnPropertyChanged(nameof(EmptyPageMessage));
         UpdatePagesText();
         RequestRecompose();
     }
 
     private void UpdatePagesText()
     {
-        // Les setters des initialiseurs de calques notifient avant la fin du constructeur.
         if (BaseLayer is null || RevisionLayer is null)
             return;
         static string Part(LayerViewModel l) =>
@@ -267,6 +424,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void StartAlignment()
     {
         _alignBeforeSession = AlignMatrix;
+        _hasControlPoint = false;
+        HasControlPointForDisplay = false;
+        ResidualMm = null;
+        IsAffineMode = false;
+        AnisotropyWarning = null;
         AlignmentInlineError = null;
         AlignmentStep = AlignmentStep.Point1OnRevision;
         RequestRecompose();
@@ -277,11 +439,41 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (!IsAligning)
             return;
+        if (AlignmentStep == AlignmentStep.Aligned)
+        {
+            // Le calage est déjà appliqué : Échap referme simplement le bandeau.
+            FinishAlignment();
+            return;
+        }
         AlignMatrix = _alignBeforeSession;
         AlignmentStep = AlignmentStep.Inactive;
         AlignmentInlineError = null;
+        _hasControlPoint = false;
+        HasControlPointForDisplay = false;
+        ResidualMm = null;
         UpdateAlignmentSummary();
         RequestRecompose();
+    }
+
+    /// <summary>Ferme le bandeau de calage en conservant le résultat (bouton Terminer, §11.4).</summary>
+    [RelayCommand]
+    private void FinishAlignment()
+    {
+        if (AlignmentStep != AlignmentStep.Aligned)
+            return;
+        AlignmentStep = AlignmentStep.Inactive;
+        AlignmentInlineError = null;
+        RequestRecompose();
+    }
+
+    /// <summary>Ouvre la pose du couple de contrôle facultatif (étape 5, §11.4).</summary>
+    [RelayCommand]
+    private void AddControlPoint()
+    {
+        if (AlignmentStep != AlignmentStep.Aligned)
+            return;
+        AlignmentInlineError = null;
+        AlignmentStep = AlignmentStep.ControlOnRevision;
     }
 
     /// <summary>Retour arrière : re-poser le point précédent.</summary>
@@ -303,6 +495,29 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             case AlignmentStep.Point2OnBase:
                 AlignmentStep = AlignmentStep.Point2OnRevision;
                 break;
+            case AlignmentStep.Aligned:
+                if (_hasControlPoint)
+                {
+                    // Retirer le contrôle (et le mode affine qui s'appuyait dessus).
+                    _hasControlPoint = false;
+                    HasControlPointForDisplay = false;
+                    ResidualMm = null;
+                    if (IsAffineMode)
+                        IsAffineMode = false; // recompose en rigide via OnIsAffineModeChanged
+                    break;
+                }
+                // Re-poser le second couple : revenir à l'état ancré.
+                AlignMatrix = _alignAfterAnchor;
+                AlignmentStep = AlignmentStep.Point2OnBase;
+                UpdateAlignmentSummary();
+                RequestRecompose();
+                break;
+            case AlignmentStep.ControlOnRevision:
+                AlignmentStep = AlignmentStep.Aligned;
+                break;
+            case AlignmentStep.ControlOnBase:
+                AlignmentStep = AlignmentStep.ControlOnRevision;
+                break;
         }
     }
 
@@ -316,9 +531,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void ResetAlignment()
     {
         AlignMatrix = SKMatrix.Identity;
+        _hasControlPoint = false;
+        HasControlPointForDisplay = false;
+        ResidualMm = null;
+        IsAffineMode = false;
+        AnisotropyWarning = null;
         UpdateAlignmentSummary();
         RequestRecompose();
     }
+
+    // ── Export (items 5 + 9 + SEN-11) ─────────────────────────────────────────
 
     private bool CanExport() => HasAnyDocument;
 
@@ -329,39 +551,202 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (request is null)
             return;
 
-        var sheetSize = BaseLayer.HasFile ? BaseLayer.PageSizePoints : RevisionLayer.PageSizePoints;
-        var layers = BuildRenderLayers(dimForAlignment: false);
-        // Les SKImage capturés dans layers sont lus par le thread d'export : la
-        // composition est déclarée « en vol » pour bloquer leur libération (FIA-01).
-        BeginBackgroundCompose();
         try
         {
-            StatusMessage = "Export en cours…";
             if (request.CurrentViewOnly)
             {
-                // Vue courante : le viewport à l'écran, rendu à 2× pour l'archivage.
-                var size = new SKSizeI(ViewportSize.Width * 2, ViewportSize.Height * 2);
-                var view = SKMatrix.CreateScale(2f, 2f).PreConcat(ViewMatrix);
-                await _exportService.ExportViewPngAsync(request.OutputPath, size, view, layers);
-                StatusMessage = $"Exporté (vue courante) → {request.OutputPath}";
+                // Vue courante : WYSIWYG depuis les rasters à l'écran, rendu à 2× pour l'archivage.
+                // Les SKImage capturés sont lus par le thread d'export : composition « en vol » (FIA-01).
+                var layers = BuildRenderLayers();
+                BeginBackgroundCompose();
+                try
+                {
+                    var size = new SKSizeI(ViewportSize.Width * 2, ViewportSize.Height * 2);
+                    var view = SKMatrix.CreateScale(2f, 2f).PreConcat(ViewMatrix);
+                    await _exportService.ExportViewPngAsync(request.OutputPath, size, view, layers);
+                }
+                finally
+                {
+                    EndBackgroundCompose();
+                }
+                ShowSnackbar($"Exporté (vue courante) → {Path.GetFileName(request.OutputPath)}", request.OutputPath);
             }
             else
             {
-                float effectiveDpi = await _exportService.ExportPngAsync(
-                    request.OutputPath, sheetSize, request.Dpi, layers);
-                StatusMessage = $"Exporté ({effectiveDpi:0} DPI) → {request.OutputPath}";
+                // Feuille entière : rendu tuilé par bandes au DPI demandé — les rasters d'écran
+                // ne sont pas utilisés, le service rend ses propres régions PDF (SEN-11).
+                var sheetSize = BaseLayer.HasFile ? BaseLayer.PageSizePoints : RevisionLayer.PageSizePoints;
+                var exportLayers = BuildExportLayers();
+                float effectiveDpi = 0f;
+                bool completed = await _dialogs.RunExportWithProgressAsync(async (progress, ct) =>
+                {
+                    effectiveDpi = await _exportService.ExportSheetPngAsync(
+                        request.OutputPath, sheetSize, request.Dpi, exportLayers, progress, ct);
+                });
+                if (completed)
+                    ShowSnackbar($"Exporté ({effectiveDpi:0} DPI) → {Path.GetFileName(request.OutputPath)}", request.OutputPath);
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = "";
-            await _dialogs.ShowErrorAsync("Export impossible",
-                $"L'écriture du PNG a échoué : {ex.Message} Réessayez vers un autre dossier.");
+            ShowSnackbar($"L'écriture du PNG a échoué : {ex.Message} Réessayez vers un autre dossier.", danger: true);
         }
-        finally
+    }
+
+    private List<ExportLayer> BuildExportLayers()
+    {
+        var layers = new List<ExportLayer>(2);
+        if (BaseLayer is { HasFile: true, FilePath: { } basePath })
+            layers.Add(new ExportLayer(basePath, BaseLayer.SelectedPage - 1, BaseLayer.PageSizePoints,
+                SKMatrix.Identity, BaseLayer.Tint, (float)(BaseLayer.OpacityPercent / 100.0), BaseLayer.Binarize));
+        if (RevisionLayer is { HasFile: true, FilePath: { } revPath })
+            layers.Add(new ExportLayer(revPath, RevisionLayer.SelectedPage - 1, RevisionLayer.PageSizePoints,
+                AlignMatrix, RevisionLayer.Tint, (float)(RevisionLayer.OpacityPercent / 100.0), RevisionLayer.Binarize));
+        return layers;
+    }
+
+    // ── Projets (item 2) ──────────────────────────────────────────────────────
+
+    [ObservableProperty]
+    private string? _currentProjectPath;
+
+    public IReadOnlyList<RecentProject> RecentProjects => _recents.Items;
+
+    public bool HasRecentProjects => _recents.Items.Count > 0;
+
+    private bool CanSaveProject() => BaseLayer.HasFile && RevisionLayer.HasFile;
+
+    [RelayCommand(CanExecute = nameof(CanSaveProject))]
+    private async Task SaveProjectAsync()
+    {
+        if (CurrentProjectPath is null)
         {
-            EndBackgroundCompose();
+            await SaveProjectAsAsync();
+            return;
         }
+        SaveProjectTo(CurrentProjectPath);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSaveProject))]
+    private Task SaveProjectAsAsync()
+    {
+        string suggested =
+            $"{Path.GetFileNameWithoutExtension(BaseLayer.FileName)}-vs-{Path.GetFileNameWithoutExtension(RevisionLayer.FileName)}{ProjectSerializer.FileExtension}";
+        if (_dialogs.PickProjectSavePath(suggested) is { } path)
+            SaveProjectTo(path);
+        return Task.CompletedTask;
+    }
+
+    private void SaveProjectTo(string path)
+    {
+        try
+        {
+            var project = new ComparisonProject
+            {
+                Base = new ProjectLayer(BaseLayer.FilePath!, BaseLayer.SelectedPage, BaseLayer.OpacityPercent, BaseLayer.Binarize),
+                Revision = new ProjectLayer(RevisionLayer.FilePath!, RevisionLayer.SelectedPage, RevisionLayer.OpacityPercent, RevisionLayer.Binarize),
+                Align = ProjectMatrix.FromMatrix(AlignMatrix),
+                TintsSwapped = BaseLayer.Tint == LayerTint.Blue,
+            };
+            ProjectSerializer.Save(path, project);
+            CurrentProjectPath = path;
+            TouchRecents(path);
+            ShowSnackbar($"Projet enregistré → {Path.GetFileName(path)}", path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ShowSnackbar($"Enregistrement impossible : {ex.Message} Réessayez vers un autre dossier.", danger: true);
+        }
+    }
+
+    /// <summary>Ctrl+O unique : un .dcproj ouvre le projet, un .pdf charge le plan de BASE.</summary>
+    [RelayCommand]
+    private async Task OpenAnyAsync()
+    {
+        if (_dialogs.PickProjectOrPdf() is not { } path)
+            return;
+        if (path.EndsWith(ProjectSerializer.FileExtension, StringComparison.OrdinalIgnoreCase))
+            await OpenProjectAsync(path);
+        else
+            await LoadIntoLayerAsync(BaseLayer, path);
+    }
+
+    [RelayCommand]
+    private Task OpenRecentAsync(RecentProject recent) => OpenProjectAsync(recent.ProjectPath);
+
+    public async Task OpenProjectAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            _recents.Remove(path);
+            OnPropertyChanged(nameof(RecentProjects));
+            OnPropertyChanged(nameof(HasRecentProjects));
+            await _dialogs.ShowErrorAsync("Ouverture du projet impossible",
+                $"« {Path.GetFileName(path)} » n'existe plus — il a été retiré de la liste Reprendre.");
+            return;
+        }
+
+        ComparisonProject project;
+        try
+        {
+            project = ProjectSerializer.Load(path);
+        }
+        catch (ProjectLoadException ex)
+        {
+            await _dialogs.ShowErrorAsync("Ouverture du projet impossible", ex.Message);
+            return;
+        }
+
+        // Chemins re-validés : repli « à côté du .dcproj », puis dialogue de relocalisation.
+        if (ResolveProjectFile(project.Base.FilePath, path) is not { } basePath)
+            return;
+        if (ResolveProjectFile(project.Revision.FilePath, path) is not { } revPath)
+            return;
+
+        BaseLayer.Tint = project.TintsSwapped ? LayerTint.Blue : LayerTint.Red;
+        RevisionLayer.Tint = project.TintsSwapped ? LayerTint.Red : LayerTint.Blue;
+
+        await LoadIntoLayerAsync(BaseLayer, basePath);
+        await LoadIntoLayerAsync(RevisionLayer, revPath);
+        if (BaseLayer.DocumentInfo is null || RevisionLayer.DocumentInfo is null)
+            return; // l'erreur a déjà été montrée par le chargement
+
+        BaseLayer.SelectedPage = Math.Clamp(project.Base.Page, 1, BaseLayer.DocumentInfo.PageCount);
+        RevisionLayer.SelectedPage = Math.Clamp(project.Revision.Page, 1, RevisionLayer.DocumentInfo.PageCount);
+        BaseLayer.OpacityPercent = project.Base.OpacityPercent;
+        RevisionLayer.OpacityPercent = project.Revision.OpacityPercent;
+        BaseLayer.Binarize = project.Base.Binarize;
+        RevisionLayer.Binarize = project.Revision.Binarize;
+
+        AlignMatrix = project.Align.ToMatrix();
+        _hasControlPoint = false;
+        HasControlPointForDisplay = false;
+        ResidualMm = null;
+        IsAffineMode = false;
+        UpdateAlignmentSummary();
+        FitToWindow();
+        RequestRecompose();
+
+        CurrentProjectPath = path;
+        TouchRecents(path);
+    }
+
+    private string? ResolveProjectFile(string storedPath, string projectPath)
+    {
+        if (File.Exists(storedPath))
+            return storedPath;
+        string sibling = Path.Combine(Path.GetDirectoryName(projectPath) ?? "", Path.GetFileName(storedPath));
+        if (File.Exists(sibling))
+            return sibling;
+        return _dialogs.RelocateMissingFile(storedPath);
+    }
+
+    private void TouchRecents(string projectPath)
+    {
+        _recents.Touch(new RecentProject(projectPath,
+            BaseLayer.FileName ?? "?", RevisionLayer.FileName ?? "?", DateTime.Now));
+        OnPropertyChanged(nameof(RecentProjects));
+        OnPropertyChanged(nameof(HasRecentProjects));
     }
 
     // ── Clics de calage (appelés par ComparatorView) ──────────────────────────
@@ -390,6 +775,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 // ce qui facilite le choix du second couple de points.
                 AlignMatrix = AlignmentMath.ComputeAnchorTranslation(
                     AlignMatrix.MapPoint(_p1), _q1).PreConcat(AlignMatrix);
+                _alignAfterAnchor = AlignMatrix;
                 AlignmentStep = AlignmentStep.Point2OnRevision;
                 RequestRecompose();
                 break;
@@ -402,8 +788,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             case AlignmentStep.Point2OnBase:
                 try
                 {
-                    AlignMatrix = AlignmentMath.ComputeSimilarity(_p1, _q1, _p2, basePoint);
-                    AlignmentStep = AlignmentStep.Inactive;
+                    _q2 = basePoint;
+                    AlignMatrix = AlignmentMath.ComputeSimilarity(_p1, _q1, _p2, _q2);
+                    AlignmentStep = AlignmentStep.Aligned;
                     UpdateAlignmentSummary();
                     RequestRecompose();
                 }
@@ -412,6 +799,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     AlignmentInlineError = $"{ex.Message} Choisissez un point plus éloigné.";
                 }
                 break;
+
+            case AlignmentStep.ControlOnRevision:
+                _p3 = MapBaseToRevision(basePoint);
+                AlignmentStep = AlignmentStep.ControlOnBase;
+                break;
+
+            case AlignmentStep.ControlOnBase:
+                _q3 = basePoint;
+                _hasControlPoint = true;
+                HasControlPointForDisplay = true;
+                AlignmentStep = AlignmentStep.Aligned;
+                if (IsAffineMode)
+                    RecomputeFromPairs();
+                UpdateResidual();
+                break;
+
+            case AlignmentStep.Aligned:
+                break; // aucun point attendu : le bandeau attend Terminer ou + Point de contrôle
         }
         return true;
     }
@@ -420,49 +825,107 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private SKPoint MapBaseToRevision(SKPoint basePoint)
         => AlignMatrix.TryInvert(out var inv) ? inv.MapPoint(basePoint) : basePoint;
 
+    /// <summary>
+    /// Recalcule la matrice depuis les couples posés, selon le mode (SEN-01 : le choix
+    /// rigide/affine est TOUJOURS celui de l'utilisateur, jamais un repli).
+    /// </summary>
+    private void RecomputeFromPairs()
+    {
+        if (!HasAlignment && AlignmentStep == AlignmentStep.Inactive)
+            return;
+        try
+        {
+            if (IsAffineMode)
+            {
+                if (!_hasControlPoint)
+                    return; // le segmented est désactivé sans 3e couple ; garde-fou
+                AlignMatrix = AlignmentMath.ComputeAffine(_p1, _q1, _p2, _q2, _p3, _q3);
+            }
+            else if (_hasControlPoint || AlignmentStep is AlignmentStep.Aligned or AlignmentStep.Inactive)
+            {
+                AlignMatrix = AlignmentMath.ComputeSimilarity(_p1, _q1, _p2, _q2);
+            }
+            UpdateResidual();
+            UpdateAlignmentSummary();
+            RequestRecompose();
+        }
+        catch (DegenerateAlignmentException ex)
+        {
+            AlignmentInlineError = $"{ex.Message}";
+            if (IsAffineMode)
+                IsAffineMode = false;
+        }
+    }
+
+    private void UpdateResidual()
+        => ResidualMm = _hasControlPoint ? AlignmentMath.ResidualMm(AlignMatrix, _p3, _q3) : null;
+
     private void UpdateAlignmentSummary()
     {
         if (AlignMatrix == SKMatrix.Identity)
         {
             AlignmentSummary = null;
+            AnisotropyWarning = null;
+            SaveProjectCommand.NotifyCanExecuteChanged();
             return;
         }
-        var (scale, rotation) = AlignmentMath.Decompose(AlignMatrix);
-        AlignmentSummary = $"échelle ={scale,7:0.0000}\nrotation ={rotation,7:+0.00;-0.00}°";
+
+        if (IsAffineMode)
+        {
+            var (sx, sy, rotation, shear) = AlignmentMath.DecomposeAffine(AlignMatrix);
+            AlignmentSummary =
+                $"é_x ={sx,7:0.0000}  é_y ={sy,7:0.0000}\nrotation ={rotation,7:+0.00;-0.00}°  cis. ={shear,7:0.0000}";
+            AnisotropyWarning = Math.Abs(sx / sy - 1.0) > 0.002
+                ? "Échelles X/Y différentes : l'affine déforme le plan révisé."
+                : null;
+        }
+        else
+        {
+            var (scale, rotation) = AlignmentMath.Decompose(AlignMatrix);
+            AlignmentSummary = $"échelle ={scale,7:0.0000}\nrotation ={rotation,7:+0.00;-0.00}°";
+            AnisotropyWarning = null;
+        }
     }
 
     // ── Composition ───────────────────────────────────────────────────────────
 
-    private List<LayerRenderInfo> BuildRenderLayers(bool dimForAlignment)
+    /// <summary>Régions visibles (gonflées d'une marge de pan) en points PDF de chaque calque + DPI de la vue.</summary>
+    private (SKRect BaseRegion, SKRect RevRegion, float ViewDpi)? ComputeVisibleRegions()
     {
-        float baseStrength = 1f, revisionStrength = 1f;
-        if (dimForAlignment)
-        {
-            // Le calque attendu par l'étape courante reste à pleine intensité, l'autre s'efface.
-            if (AlignmentStep is AlignmentStep.Point1OnRevision or AlignmentStep.Point2OnRevision)
-                baseStrength = 0.25f;
-            else if (AlignmentStep is AlignmentStep.Point1OnBase or AlignmentStep.Point2OnBase)
-                revisionStrength = 0.25f;
-        }
+        if (ViewportSize.Width <= 0 || !ViewMatrix.TryInvert(out var viewInverse))
+            return null;
+        var baseRect = viewInverse.MapRect(new SKRect(0, 0, ViewportSize.Width, ViewportSize.Height));
+        baseRect.Inflate(baseRect.Width * DetailRegionInflate, baseRect.Height * DetailRegionInflate);
 
+        var revRect = AlignMatrix.TryInvert(out var alignInverse)
+            ? alignInverse.MapRect(baseRect) // AABB dans le repère du révisé (la rotation gonfle, correct)
+            : baseRect;
+
+        // La ViewMatrix est une similitude sans rotation : ScaleX suffit (hypothèse documentée).
+        return (baseRect, revRect, ViewMatrix.ScaleX * 72f);
+    }
+
+    private List<LayerRenderInfo> BuildRenderLayers()
+    {
+        var regions = ComputeVisibleRegions();
         var layers = new List<LayerRenderInfo>(2);
-        if (BaseLayer.ToRenderInfo(SKMatrix.Identity, baseStrength) is { } b)
+        if (BaseLayer.ToRenderInfo(SKMatrix.Identity, regions?.BaseRegion, regions?.ViewDpi ?? 0f) is { } b)
             layers.Add(b);
-        if (RevisionLayer.ToRenderInfo(AlignMatrix, revisionStrength) is { } r)
+        if (RevisionLayer.ToRenderInfo(AlignMatrix, regions?.RevRegion, regions?.ViewDpi ?? 0f) is { } r)
             layers.Add(r);
         return layers;
     }
 
     /// <summary>
     /// Recomposition coalescée : jamais plus d'une composition de viewport en vol,
-    /// la dernière demande gagne. Wrapper non-async : le cœur testable est
-    /// <see cref="RecomposeLoopAsync"/>, dont les erreurs sont contenues (statut,
-    /// pas de dialogue par événement souris).
+    /// la dernière demande gagne. Déclenche aussi (avec debounce) le rendu de la
+    /// tuile nette de la région visible — pipeline v2.
     /// </summary>
     public void RequestRecompose()
     {
         if (ViewportSize.Width <= 0 || ViewportSize.Height <= 0)
             return;
+        ScheduleDetailRender();
         if (_composeRunning)
         {
             _composeDirty = true;
@@ -482,7 +945,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             do
             {
                 _composeDirty = false;
-                var layers = BuildRenderLayers(dimForAlignment: IsAligning);
+                var layers = BuildRenderLayers();
                 var view = ViewMatrix;
                 var size = ViewportSize;
 
@@ -521,19 +984,75 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    // ── Tuile nette (point 1 : rendu par région, debounce, annulation) ────────
+
+    private void ScheduleDetailRender()
+    {
+        _detailCts?.Cancel();
+        _detailCts?.Dispose();
+        _detailCts = new CancellationTokenSource();
+        CurrentDetailRender = RenderDetailsAfterDelayAsync(_detailCts.Token);
+    }
+
+    /// <summary>Tâche du rendu de tuile en cours — observable par les tests.</summary>
+    public Task? CurrentDetailRender { get; private set; }
+
+    internal async Task RenderDetailsAfterDelayAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(DetailDebounceMs, ct);
+            if (ComputeVisibleRegions() is not { } regions)
+                return;
+
+            bool changed = false;
+            foreach (var (layer, region) in new[]
+            {
+                (BaseLayer, regions.BaseRegion),
+                (RevisionLayer, regions.RevRegion),
+            })
+            {
+                if (layer.Raster is null)
+                    continue;
+                // En dessous du DPI de l'overview, le chemin mipmap actuel est déjà optimal.
+                if (regions.ViewDpi <= layer.OverviewDpi * 1.02f)
+                    continue;
+                IsSharpening = true;
+                changed |= await layer.RenderDetailAsync(region, regions.ViewDpi, ct);
+            }
+
+            if (changed && !ct.IsCancellationRequested)
+                RequestRecompose();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (PdfLoadException ex)
+        {
+            // SEN-04 : l'overview reste affiché, l'échec de netteté s'annonce sans dialogue.
+            StatusMessage = $"Netteté indisponible : {ex.Message}";
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+                IsSharpening = false;
+        }
+    }
+
     /// <summary>Matrice de vue au moment de la dernière composition (pour le transform GPU intermédiaire).</summary>
     public SKMatrix ComposedViewMatrix { get; private set; } = SKMatrix.Identity;
 
     public event Action? CompositeUpdated;
 
-    /// <summary>Compose la loupe du viseur : région centrée sur le curseur, grossie ×<paramref name="magnification"/>.</summary>
+    /// <summary>Compose la loupe du viseur : région centrée sur le curseur, grossie ×<paramref name="magnification"/>.
+    /// La loupe compose SANS scrim : c'est elle qui « perce » le voile du mode calage à pleine lumière.</summary>
     public SKBitmap ComposeLoupe(SKPoint screenPoint, int sizePx, float magnification)
     {
         var m = SKMatrix.CreateTranslation(sizePx / 2f, sizePx / 2f)
             .PreConcat(SKMatrix.CreateScale(magnification, magnification))
             .PreConcat(SKMatrix.CreateTranslation(-screenPoint.X, -screenPoint.Y))
             .PreConcat(ViewMatrix);
-        return _compositor.ComposeToBitmap(new SKSizeI(sizePx, sizePx), m, BuildRenderLayers(dimForAlignment: IsAligning));
+        return _compositor.ComposeToBitmap(new SKSizeI(sizePx, sizePx), m, BuildRenderLayers());
     }
 
     // ── Cycle de vie des rasters (FIA-01) ─────────────────────────────────────
@@ -582,7 +1101,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Appelé par le conteneur DI à la fermeture (singleton IDisposable).</summary>
     public void Dispose()
     {
+        _detailCts?.Cancel();
+        _detailCts?.Dispose();
+        _detailCts = null;
+        _snackbarCts?.Cancel();
+        _snackbarCts?.Dispose();
+        _snackbarCts = null;
         BaseLayer.Dispose();
         RevisionLayer.Dispose();
+        // SEN-05 : les rasters retirés par les Dispose des calques ci-dessus sont purgés
+        // immédiatement s'il ne reste aucune composition en vol.
+        if (_composersInFlight == 0)
+        {
+            foreach (var b in _retiredBitmaps)
+                b.Dispose();
+            _retiredBitmaps.Clear();
+        }
     }
 }

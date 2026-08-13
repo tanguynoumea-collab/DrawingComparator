@@ -1,0 +1,14 @@
+# SEC-04 : la « cadence de mise à jour PDFtoImage/PDFium » devient un bot —
+# seul contrôle contre les CVE des natives embarquées (pdfium, libSkiaSharp).
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

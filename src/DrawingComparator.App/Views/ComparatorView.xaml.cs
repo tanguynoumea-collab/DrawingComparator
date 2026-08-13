@@ -39,6 +39,33 @@ public partial class ComparatorView : UserControl
         MouseMove += OnMouseMove;
         MouseUp += OnMouseUp;
         MouseLeave += (_, _) => LoupeBorder.Visibility = Visibility.Collapsed;
+        PreviewKeyDown += OnPreviewKeyDown;
+    }
+
+    /// <summary>
+    /// Ajustement fin au clavier (item 3) : les flèches translatent le plan RÉVISÉ du pas
+    /// courant en mm papier ; Maj force le pas fin (0,1), Ctrl le pas large (2).
+    /// Preview : sans lui, les flèches partent dans la navigation de focus WPF.
+    /// </summary>
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_vm is null)
+            return;
+        int dx = 0, dy = 0;
+        switch (e.Key)
+        {
+            case Key.Left: dx = -1; break;
+            case Key.Right: dx = 1; break;
+            case Key.Up: dy = -1; break; // repère document Y vers le bas
+            case Key.Down: dy = 1; break;
+            default: return;
+        }
+
+        double? overrideStep =
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 0.1 :
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ? 2.0 : null;
+        _vm.NudgeRevision(dx, dy, overrideStep);
+        e.Handled = true;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -170,7 +197,8 @@ public partial class ComparatorView : UserControl
 
     private void UpdateLoupe(Point pos, bool force = false)
     {
-        if (_vm is null || !_vm.IsAligning)
+        // La loupe ne sert qu'à VISER : elle disparaît dès qu'aucun point n'est attendu.
+        if (_vm is null || !_vm.IsPosingPoint)
         {
             LoupeBorder.Visibility = Visibility.Collapsed;
             return;

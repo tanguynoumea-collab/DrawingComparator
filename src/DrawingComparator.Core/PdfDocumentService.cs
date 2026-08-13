@@ -94,36 +94,68 @@ public sealed class PdfDocumentService : IPdfDocumentService
     public Task<SKBitmap> RenderPageAsync(string filePath, int pageIndex, float dpi, CancellationToken ct = default)
         => Task.Run(() =>
         {
-            OpenDocument? doc;
-            lock (_cacheLock)
-            {
-                _documents.TryGetValue(filePath, out doc);
-            }
-            if (doc is null)
-                throw new PdfLoadException($"« {Path.GetFileName(filePath)} » n'est plus ouvert — rechargez-le.");
-            if (pageIndex < 0 || pageIndex >= doc.Info.PageCount)
-                throw new PdfLoadException($"La page {pageIndex + 1} n'existe pas dans « {Path.GetFileName(filePath)} » ({doc.Info.PageCount} pages).");
-
+            var doc = GetOpenDocument(filePath, pageIndex);
             float cappedDpi = CapDpi(doc.Info.PageSizesPoints[pageIndex], dpi);
-
-            try
-            {
-                lock (PdfiumLock)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var options = new RenderOptions(Dpi: (int)Math.Round(cappedDpi), WithAnnotations: true, AntiAliasing: PdfAntiAliasing.All);
-                    return Conversion.ToImage(doc.Bytes, page: pageIndex, options: options);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new PdfLoadException(TranslatePdfiumError(filePath, ex), ex);
-            }
+            var options = new RenderOptions(Dpi: (int)Math.Round(cappedDpi), WithAnnotations: true, AntiAliasing: PdfAntiAliasing.All);
+            return RenderWithPdfium(doc, filePath, pageIndex, options, ct);
         }, ct);
+
+    public Task<SKBitmap> RenderRegionAsync(string filePath, int pageIndex, SKRect regionPoints, float dpi, CancellationToken ct = default)
+        => Task.Run(() =>
+        {
+            var doc = GetOpenDocument(filePath, pageIndex);
+            var pageSize = doc.Info.PageSizesPoints[pageIndex];
+
+            var region = regionPoints;
+            region.Intersect(new SKRect(0, 0, pageSize.Width, pageSize.Height));
+            if (region.Width <= 0 || region.Height <= 0)
+                throw new ArgumentException("La région demandée est hors de la page.", nameof(regionPoints));
+
+            // Le budget porte sur ce qu'on ALLOUE : la région, pas la page. C'est ce qui rend
+            // la mémoire constante quel que soit le zoom (LLM-Council cycle 2, point 1).
+            float cappedDpi = CapDpi(new SKSize(region.Width, region.Height), dpi);
+            var options = new RenderOptions(
+                Dpi: (int)Math.Round(cappedDpi),
+                WithAnnotations: true,
+                AntiAliasing: PdfAntiAliasing.All,
+                Bounds: new System.Drawing.RectangleF(region.Left, region.Top, region.Width, region.Height),
+                DpiRelativeToBounds: true);
+            return RenderWithPdfium(doc, filePath, pageIndex, options, ct);
+        }, ct);
+
+    private OpenDocument GetOpenDocument(string filePath, int pageIndex)
+    {
+        OpenDocument? doc;
+        lock (_cacheLock)
+        {
+            _documents.TryGetValue(filePath, out doc);
+        }
+        if (doc is null)
+            throw new PdfLoadException($"« {Path.GetFileName(filePath)} » n'est plus ouvert — rechargez-le.");
+        if (pageIndex < 0 || pageIndex >= doc.Info.PageCount)
+            throw new PdfLoadException($"La page {pageIndex + 1} n'existe pas dans « {Path.GetFileName(filePath)} » ({doc.Info.PageCount} pages).");
+        return doc;
+    }
+
+    private static SKBitmap RenderWithPdfium(OpenDocument doc, string filePath, int pageIndex, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            lock (PdfiumLock)
+            {
+                ct.ThrowIfCancellationRequested();
+                return Conversion.ToImage(doc.Bytes, page: pageIndex, options: options);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new PdfLoadException(TranslatePdfiumError(filePath, ex), ex);
+        }
+    }
 
     /// <summary>
     /// Budget de rendu, appliqué sur les tailles mesurées par le service : le DPI effectif

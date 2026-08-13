@@ -1,0 +1,75 @@
+# CI DrawingComparator (roadmap item 14, protocole de publication §5) :
+# - build Release + format + tests sur chaque push/PR vers main ;
+# - sur tag v* : publish.ps1 (exe single-file + SHA-256) et Release GitHub avec l'artefact,
+#   reconstruit indépendamment du poste local.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # SDK 10 : builder la solution .slnx ; runtime 8 : exécuter les tests net8.0.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore (lock files stricts)
+        run: dotnet restore --locked-mode
+
+      - name: Build Release (warnings = erreurs)
+        run: dotnet build -c Release --no-restore
+
+      - name: Format
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Tests
+        run: dotnet test -c Release --no-build
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write # création de la Release et upload de l'artefact
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Publish (exe single-file + SHA-256)
+        run: powershell -File scripts/publish.ps1
+
+      - name: Zip de release
+        run: |
+          $tag = "${{ github.ref_name }}"
+          Compress-Archive -Path publish\DrawingComparator.App.exe, publish\SHA256SUMS.txt `
+            -DestinationPath "DrawingComparator-$tag-win-x64.zip"
+        shell: powershell
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DrawingComparator-${{ github.ref_name }}-win-x64
+          path: DrawingComparator-*.zip
+
+      - name: Release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            DrawingComparator-*.zip
+            publish/SHA256SUMS.txt
+          generate_release_notes: true

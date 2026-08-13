@@ -2,53 +2,148 @@ using SkiaSharp;
 
 namespace DrawingComparator.Core;
 
+/// <summary>
+/// Un calque décrit pour l'export tuilé : le service rend lui-même les régions PDF nécessaires,
+/// bande par bande — les rasters d'écran ne sont jamais réutilisés pour la feuille entière.
+/// </summary>
+public sealed record ExportLayer(
+    string FilePath,
+    int PageIndex,
+    SKSize PageSizePoints,
+    SKMatrix DocToBase,
+    LayerTint Tint,
+    float Strength,
+    bool Binarize = false);
+
 public interface IExportService
 {
     /// <summary>
-    /// Exporte le comparatif en PNG sur l'emprise du plan de base, au DPI demandé.
-    /// Si la surface dépasse <see cref="ExportService.MaxPixels"/>, le DPI est réduit d'autant et
-    /// le DPI effectif est retourné (jamais d'échec silencieux, jamais d'explosion mémoire).
+    /// Exporte le comparatif en PNG sur l'emprise du plan de base, au DPI demandé, en rendant
+    /// chaque bande par région PDFium au DPI cible : le DPI annoncé est le DPI réel (SEN-11),
+    /// quelle que soit la taille de la feuille — seul le plafond <see cref="ExportService.MaxSheetPixels"/>
+    /// peut le réduire, et le DPI effectif est alors retourné. Une progression déterminée est
+    /// émise par bande (0..1) ; l'annulation abandonne le fichier.
     /// </summary>
-    Task<float> ExportPngAsync(string outputPath, SKSize baseSizePoints, float dpi,
-        IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct = default);
+    Task<float> ExportSheetPngAsync(string outputPath, SKSize baseSizePoints, float dpi,
+        IReadOnlyList<ExportLayer> layers, IProgress<double>? progress = null, CancellationToken ct = default);
 
-    /// <summary>Exporte une vue arbitraire (viewport écran) en PNG — même pipeline que la feuille entière.</summary>
+    /// <summary>Exporte une vue arbitraire (viewport écran, WYSIWYG) depuis les rasters fournis.</summary>
     Task ExportViewPngAsync(string outputPath, SKSizeI sizePixels, SKMatrix baseToView,
         IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct = default);
 }
 
-public sealed class ExportService(IComparisonCompositor compositor) : IExportService
+public sealed class ExportService(IComparisonCompositor compositor, IPdfDocumentService pdfService) : IExportService
 {
-    /// <summary>Garde-fou mémoire : ~120 Mpx ≈ 480 Mo BGRA le temps de l'encodage.</summary>
+    /// <summary>Garde-fou mémoire de l'export vue (bitmap unique) : ~120 Mpx ≈ 480 Mo BGRA.</summary>
     public const double MaxPixels = 120_000_000;
 
     /// <summary>
-    /// Échelle points→pixels retenue pour une feuille donnée : le DPI demandé,
-    /// réduit si nécessaire pour tenir dans <see cref="MaxPixels"/>. Pur, testable.
+    /// Garde-fou de la feuille entière (rendu par bandes : le pic = bitmap final + une bande) :
+    /// ~200 Mpx couvre un A0 à 300 DPI (~140 Mpx) sans mentir sur le DPI.
     /// </summary>
-    public static (float Scale, float EffectiveDpi) ComputeExportScale(SKSize sizePoints, float dpi)
+    public const double MaxSheetPixels = 200_000_000;
+
+    /// <summary>Budget de pixels d'une bande de rendu (rasters de région + composite de bande).</summary>
+    private const double BandPixels = 16_000_000;
+
+    /// <summary>Marge ajoutée aux régions rendues (points PDF) pour absorber l'anti-aliasing aux joints de bandes.</summary>
+    private const float BandSeamMarginPoints = 2f;
+
+    /// <summary>
+    /// Échelle points→pixels retenue pour une feuille donnée : le DPI demandé,
+    /// réduit si nécessaire pour tenir dans le budget. Pur, testable.
+    /// </summary>
+    public static (float Scale, float EffectiveDpi) ComputeExportScale(SKSize sizePoints, float dpi,
+        double maxPixels = MaxSheetPixels)
     {
         float scale = dpi / 72f;
         double pixels = (double)sizePoints.Width * scale * sizePoints.Height * scale;
-        if (pixels > MaxPixels)
+        if (pixels > maxPixels)
         {
-            scale *= (float)Math.Sqrt(MaxPixels / pixels);
+            scale *= (float)Math.Sqrt(maxPixels / pixels);
         }
         return (scale, scale * 72f);
     }
 
-    public Task<float> ExportPngAsync(string outputPath, SKSize baseSizePoints, float dpi,
-        IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct = default)
-        => Task.Run(() =>
-        {
-            var (scale, effectiveDpi) = ComputeExportScale(baseSizePoints, dpi);
-            var size = new SKSizeI(
-                Math.Max(1, (int)Math.Round(baseSizePoints.Width * scale)),
-                Math.Max(1, (int)Math.Round(baseSizePoints.Height * scale)));
+    public async Task<float> ExportSheetPngAsync(string outputPath, SKSize baseSizePoints, float dpi,
+        IReadOnlyList<ExportLayer> layers, IProgress<double>? progress = null, CancellationToken ct = default)
+    {
+        var (scale, effectiveDpi) = ComputeExportScale(baseSizePoints, dpi);
+        var size = new SKSizeI(
+            Math.Max(1, (int)Math.Round(baseSizePoints.Width * scale)),
+            Math.Max(1, (int)Math.Round(baseSizePoints.Height * scale)));
 
-            ComposeAndSave(outputPath, size, SKMatrix.CreateScale(scale, scale), layers, ct);
-            return effectiveDpi;
-        }, ct);
+        int bandHeightPx = Math.Max(256, (int)(BandPixels / size.Width));
+        int bandCount = (size.Height + bandHeightPx - 1) / bandHeightPx;
+
+        ct.ThrowIfCancellationRequested();
+        using var sheet = new SKBitmap(new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Premul));
+        using (var sheetCanvas = new SKCanvas(sheet))
+        {
+            for (int band = 0; band < bandCount; band++)
+            {
+                ct.ThrowIfCancellationRequested();
+                int y0 = band * bandHeightPx;
+                int bandH = Math.Min(bandHeightPx, size.Height - y0);
+
+                // Emprise de la bande en points du plan de base, avec marge anti-jointure.
+                var bandRectPoints = new SKRect(0, y0 / scale, baseSizePoints.Width, (y0 + bandH) / scale);
+                bandRectPoints.Inflate(0, BandSeamMarginPoints);
+
+                var infos = new List<LayerRenderInfo>(layers.Count);
+                var bandImages = new List<SKImage>(layers.Count);
+                try
+                {
+                    foreach (var layer in layers)
+                    {
+                        if (layer.Strength <= 0f || !layer.DocToBase.TryInvert(out var baseToDoc))
+                            continue;
+
+                        var region = baseToDoc.MapRect(bandRectPoints);
+                        region.Inflate(BandSeamMarginPoints, BandSeamMarginPoints);
+                        region.Intersect(new SKRect(0, 0, layer.PageSizePoints.Width, layer.PageSizePoints.Height));
+                        if (region.Width <= 0 || region.Height <= 0)
+                            continue; // le calque ne couvre pas cette bande
+
+                        var raster = await pdfService.RenderRegionAsync(
+                            layer.FilePath, layer.PageIndex, region, effectiveDpi, ct).ConfigureAwait(false);
+                        raster.SetImmutable();
+                        var image = SKImage.FromBitmap(raster);
+                        raster.Dispose();
+                        bandImages.Add(image);
+
+                        // L'échelle réelle se mesure sur les pixels rendus, par axe (arrondi entier du DPI).
+                        infos.Add(new LayerRenderInfo(
+                            image,
+                            RasterScale: image.Width / region.Width,
+                            layer.DocToBase,
+                            layer.Tint,
+                            layer.Strength,
+                            RegionOriginDoc: new SKPoint(region.Left, region.Top),
+                            RasterScaleY: image.Height / region.Height,
+                            layer.Binarize));
+                    }
+
+                    ct.ThrowIfCancellationRequested();
+                    var bandView = SKMatrix.CreateTranslation(0, -y0).PreConcat(SKMatrix.CreateScale(scale, scale));
+                    using var bandBitmap = compositor.ComposeToBitmap(new SKSizeI(size.Width, bandH), bandView, infos);
+                    // Blit 1:1 : aucun ré-échantillonnage, la bande tombe pile sur ses lignes.
+                    sheetCanvas.DrawBitmap(bandBitmap, new SKPoint(0, y0), new SKSamplingOptions(SKFilterMode.Nearest));
+                }
+                finally
+                {
+                    foreach (var image in bandImages)
+                        image.Dispose();
+                }
+
+                progress?.Report((band + 1) / (double)bandCount);
+            }
+        }
+
+        ct.ThrowIfCancellationRequested();
+        SavePng(outputPath, sheet);
+        return effectiveDpi;
+    }
 
     public Task ExportViewPngAsync(string outputPath, SKSizeI sizePixels, SKMatrix baseToView,
         IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct = default)
@@ -64,16 +159,14 @@ public sealed class ExportService(IComparisonCompositor compositor) : IExportSer
                     Math.Max(1, (int)(sizePixels.Height * f)));
                 baseToView = SKMatrix.CreateScale(f, f).PreConcat(baseToView);
             }
-            ComposeAndSave(outputPath, sizePixels, baseToView, layers, ct);
+            ct.ThrowIfCancellationRequested();
+            using var bitmap = compositor.ComposeToBitmap(sizePixels, baseToView, layers);
+            ct.ThrowIfCancellationRequested();
+            SavePng(outputPath, bitmap);
         }, ct);
 
-    private void ComposeAndSave(string outputPath, SKSizeI size, SKMatrix baseToView,
-        IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct)
+    private static void SavePng(string outputPath, SKBitmap bitmap)
     {
-        ct.ThrowIfCancellationRequested();
-        using var bitmap = compositor.ComposeToBitmap(size, baseToView, layers);
-
-        ct.ThrowIfCancellationRequested();
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100)
             ?? throw new InvalidOperationException("L'encodage PNG a échoué.");

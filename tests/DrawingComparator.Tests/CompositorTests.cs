@@ -133,4 +133,77 @@ public class CompositorTests
         Assert.InRange(pixel.Green, 110, 145);
         Assert.InRange(pixel.Blue, 110, 145);
     }
+
+    [Fact]
+    public void RegionOrigin_PositionsTileInDocSpace()
+    {
+        // SEN-14 : une tuile dont l'origine est (5, 3) points doc doit dessiner son
+        // pixel (0,0) à l'écran en (5, 3) — la translation d'origine précède l'échelle.
+        using var raster = MakeRaster();
+        var compositor = new ComparisonCompositor();
+
+        var layers = new List<LayerRenderInfo>
+        {
+            new(raster, RasterScale: 1f, SKMatrix.Identity, LayerTint.Red, 1f,
+                RegionOriginDoc: new SKPoint(5, 3)),
+        };
+
+        using var result = compositor.ComposeToBitmap(new SKSizeI(8, 6), SKMatrix.Identity, layers);
+
+        var moved = result.GetPixel(5, 3);
+        Assert.True(moved.Red > 240 && moved.Green < 15, $"Trait attendu en (5,3), obtenu {moved}");
+        var origin = result.GetPixel(0, 0);
+        Assert.True(origin.Red > 240 && origin.Green > 240, $"(0,0) doit être blanc, obtenu {origin}");
+    }
+
+    [Fact]
+    public void AnisotropicRasterScale_UsesBothAxes()
+    {
+        // L'arrondi entier du DPI d'une région peut produire des échelles X/Y différentes :
+        // un raster 2×4 couvrant 2×2 points doc (scaleY = 2) doit se dessiner sur 2×2 px.
+        using var bmp = new SKBitmap(new SKImageInfo(2, 4, SKColorType.Bgra8888, SKAlphaType.Premul));
+        bmp.Erase(SKColors.Black);
+        bmp.SetImmutable();
+        using var raster = SKImage.FromBitmap(bmp);
+        var compositor = new ComparisonCompositor();
+
+        var layers = new List<LayerRenderInfo>
+        {
+            new(raster, RasterScale: 1f, SKMatrix.Identity, LayerTint.Red, 1f, RasterScaleY: 2f),
+        };
+
+        using var result = compositor.ComposeToBitmap(new SKSizeI(4, 6), SKMatrix.Identity, layers);
+
+        Assert.True(result.GetPixel(1, 1).Red > 240 && result.GetPixel(1, 1).Green < 15,
+            "l'intérieur du trait doit être rouge");
+        var below = result.GetPixel(1, 3); // sous les 2 points doc couverts → blanc
+        Assert.True(below.Green > 240, $"attendu blanc sous la tuile, obtenu {below}");
+    }
+
+    [Fact]
+    public void Binarize_CleansGreyScanBackground_KeepsStrokes()
+    {
+        // Item 8 : fond gris de scan (~0,88) → blanc ; trait sombre → teinte pleine.
+        using var bmp = new SKBitmap(new SKImageInfo(2, 2, SKColorType.Bgra8888, SKAlphaType.Premul));
+        bmp.Erase(new SKColor(225, 225, 225)); // gris clair de scanner
+        bmp.SetPixel(0, 0, new SKColor(70, 70, 70)); // trait encre
+        bmp.SetImmutable();
+        using var raster = SKImage.FromBitmap(bmp);
+        var compositor = new ComparisonCompositor();
+
+        var on = new List<LayerRenderInfo> { new(raster, 1f, SKMatrix.Identity, LayerTint.Red, 1f, Binarize: true) };
+        using var cleaned = compositor.ComposeToBitmap(new SKSizeI(2, 2), SKMatrix.Identity, on);
+
+        var background = cleaned.GetPixel(1, 1);
+        Assert.True(background.Red > 240 && background.Green > 240 && background.Blue > 240,
+            $"fond gris attendu blanc après binarisation, obtenu {background}");
+        var stroke = cleaned.GetPixel(0, 0);
+        Assert.True(stroke.Red > 240 && stroke.Green < 15 && stroke.Blue < 15,
+            $"trait attendu rouge plein, obtenu {stroke}");
+
+        // Sans binarisation, le fond gris assombrit tout le comparatif (le défaut des scans).
+        var off = new List<LayerRenderInfo> { new(raster, 1f, SKMatrix.Identity, LayerTint.Red, 1f) };
+        using var raw = compositor.ComposeToBitmap(new SKSizeI(2, 2), SKMatrix.Identity, off);
+        Assert.True(raw.GetPixel(1, 1).Green < 240, "sans binarisation le fond gris doit rester teinté");
+    }
 }

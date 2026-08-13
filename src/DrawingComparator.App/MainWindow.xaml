@@ -18,8 +18,11 @@
                  WindowStartupLocation="CenterScreen">
 
     <ui:FluentWindow.InputBindings>
-        <KeyBinding Modifiers="Ctrl" Key="O" Command="{Binding OpenBaseCommand}" />
+        <!-- Ctrl+O unique : projet .dcproj OU plan PDF (DESIGN_PLAN §11.1) -->
+        <KeyBinding Modifiers="Ctrl" Key="O" Command="{Binding OpenAnyCommand}" />
         <KeyBinding Modifiers="Ctrl+Shift" Key="O" Command="{Binding OpenRevisionCommand}" />
+        <KeyBinding Modifiers="Ctrl" Key="S" Command="{Binding SaveProjectCommand}" />
+        <KeyBinding Modifiers="Ctrl+Shift" Key="S" Command="{Binding SaveProjectAsCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="E" Command="{Binding ExportCommand}" />
         <KeyBinding Key="A" Command="{Binding StartAlignmentCommand}" />
         <KeyBinding Key="Escape" Command="{Binding CancelAlignmentCommand}" />
@@ -52,6 +55,31 @@
             <Setter Property="Margin" Value="16,0" />
             <Setter Property="AllowDrop" Value="True" />
         </Style>
+        <!-- Entrée de la liste « Reprendre » : bouton discret, double liseré rouge|bleu (§11.1) -->
+        <Style x:Key="RecentEntryButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{StaticResource RadiusControl}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushSurface}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </ui:FluentWindow.Resources>
 
     <Grid>
@@ -64,9 +92,21 @@
 
         <ui:TitleBar Grid.Row="0" Title="DrawingComparator" ShowMaximize="True" ShowMinimize="True" />
 
-        <!-- ═══ Barre d'outils ═══ -->
+        <!-- ═══ Barre d'outils : groupe projet | calage | export ═══ -->
         <Border Grid.Row="1" Background="{StaticResource BrushSurface}" Padding="16,8">
             <StackPanel Orientation="Horizontal">
+                <Button Style="{StaticResource ToolbarButton}"
+                        Margin="0"
+                        Command="{Binding OpenAnyCommand}"
+                        Content="Ouvrir…"
+                        ToolTip="Ouvrir un projet ou un plan PDF (Ctrl+O)" />
+                <Button Style="{StaticResource ToolbarButton}"
+                        Command="{Binding SaveProjectCommand}"
+                        Content="Enregistrer"
+                        ToolTip="Enregistrer le projet de superposition (Ctrl+S) — nécessite les deux plans" />
+                <Border Width="1"
+                        Background="{StaticResource BrushBackground}"
+                        Margin="16,2" />
                 <Button Style="{StaticResource AccentButton}"
                         Margin="0"
                         Command="{Binding StartAlignmentCommand}"
@@ -94,7 +134,7 @@
 
             <views:ComparatorView Grid.Column="0" DataContext="{Binding}" />
 
-            <!-- État vide : deux zones de dépôt (DESIGN_PLAN §3 « état vide »).
+            <!-- État vide : deux zones de dépôt + liste Reprendre (DESIGN_PLAN §3 + §11.1).
                  DUPLIQUÉ VOLONTAIREMENT : les cartes BASE et RÉVISÉ sont jumelles —
                  toute retouche visuelle doit être reportée dans LES DEUX blocs. -->
             <StackPanel Grid.Column="0"
@@ -154,7 +194,97 @@
                            FontSize="{StaticResource FontSizeBody}"
                            HorizontalAlignment="Center"
                            Margin="0,24,0,0" />
+
+                <!-- Reprendre : projets récents (item 2), identité = double liseré rouge|bleu -->
+                <StackPanel Margin="16,32,16,0"
+                            Visibility="{Binding HasRecentProjects, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="REPRENDRE" Style="{StaticResource PanelTitle}" Margin="8,0,0,4" />
+                    <ItemsControl ItemsSource="{Binding RecentProjects}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource RecentEntryButton}"
+                                        Command="{Binding DataContext.OpenRecentCommand, RelativeSource={RelativeSource AncestorType=ui:FluentWindow}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="{Binding ProjectPath}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="200" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,12,0">
+                                            <Border Width="3" Background="{StaticResource BrushTintBase}" />
+                                            <Border Width="3" Background="{StaticResource BrushTintRevision}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding ProjectName}"
+                                                   Foreground="{StaticResource BrushTextPrimary}"
+                                                   FontSize="{StaticResource FontSizeBody}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding PairLabel}"
+                                                   Foreground="{StaticResource BrushTextSecondary}"
+                                                   FontSize="{StaticResource FontSizeCaption}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"
+                                                   Margin="12,0" />
+                                        <TextBlock Grid.Column="3"
+                                                   Style="{StaticResource DataText}"
+                                                   Text="{Binding LastOpenedLabel}"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </StackPanel>
+
+            <!-- Snackbar (item 5) : succès = liseré Accent, échec = liseré Danger -->
+            <Border Grid.Column="0"
+                    VerticalAlignment="Bottom"
+                    HorizontalAlignment="Center"
+                    Margin="24,0,24,24"
+                    Background="{StaticResource BrushSurface}"
+                    CornerRadius="{StaticResource RadiusCard}"
+                    BorderThickness="3,0,0,0"
+                    Padding="16,10"
+                    Visibility="{Binding SnackbarMessage, Converter={StaticResource NullToCollapsed}}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="BorderBrush" Value="{StaticResource BrushAccent}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding SnackbarIsDanger}" Value="True">
+                                <Setter Property="BorderBrush" Value="{StaticResource BrushDanger}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding SnackbarMessage}"
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               VerticalAlignment="Center"
+                               MaxWidth="520"
+                               TextTrimming="CharacterEllipsis" />
+                    <Button Content="Ouvrir le dossier"
+                            Command="{Binding RevealInExplorerCommand}"
+                            MinHeight="28"
+                            Margin="12,0,0,0"
+                            Visibility="{Binding SnackbarRevealPath, Converter={StaticResource NullToCollapsed}}" />
+                    <Button Content="✕"
+                            Command="{Binding DismissSnackbarCommand}"
+                            MinWidth="28"
+                            MinHeight="28"
+                            Padding="0"
+                            Margin="8,0,0,0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="{StaticResource BrushTextSecondary}" />
+                </StackPanel>
+            </Border>
 
             <!-- ═══ Panneau latéral ═══ -->
             <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
@@ -190,6 +320,7 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Page"
                                            Foreground="{StaticResource BrushTextSecondary}"
@@ -206,6 +337,13 @@
                                         MinWidth="32" MinHeight="32"
                                         ToolTip="Choisir un autre fichier (Ctrl+O)"
                                         Command="{Binding DataContext.OpenBaseCommand, RelativeSource={RelativeSource AncestorType=ui:FluentWindow}}" />
+                                <Button Grid.Column="3"
+                                        Content="✕"
+                                        MinWidth="32" MinHeight="32"
+                                        Margin="4,0,0,0"
+                                        IsEnabled="{Binding HasFile}"
+                                        ToolTip="Retirer ce plan"
+                                        Command="{Binding ClearFileCommand}" />
                             </Grid>
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
@@ -222,6 +360,13 @@
                                         IsEnabled="{Binding HasFile}"
                                         Margin="8,0,0,0" />
                             </Grid>
+                            <ToggleButton Content="◐ Binariser"
+                                          IsChecked="{Binding Binarize}"
+                                          IsEnabled="{Binding HasFile}"
+                                          MinHeight="28"
+                                          HorizontalAlignment="Left"
+                                          Margin="0,8,0,0"
+                                          ToolTip="Nettoie les scans : fond gris → blanc, traits → teinte pleine. Sans effet sur les PDF vectoriels nets." />
                         </StackPanel>
                     </Border>
 
@@ -251,6 +396,7 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Page"
                                            Foreground="{StaticResource BrushTextSecondary}"
@@ -267,6 +413,13 @@
                                         MinWidth="32" MinHeight="32"
                                         ToolTip="Choisir un autre fichier (Ctrl+Maj+O)"
                                         Command="{Binding DataContext.OpenRevisionCommand, RelativeSource={RelativeSource AncestorType=ui:FluentWindow}}" />
+                                <Button Grid.Column="3"
+                                        Content="✕"
+                                        MinWidth="32" MinHeight="32"
+                                        Margin="4,0,0,0"
+                                        IsEnabled="{Binding HasFile}"
+                                        ToolTip="Retirer ce plan"
+                                        Command="{Binding ClearFileCommand}" />
                             </Grid>
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
@@ -283,6 +436,13 @@
                                         IsEnabled="{Binding HasFile}"
                                         Margin="8,0,0,0" />
                             </Grid>
+                            <ToggleButton Content="◐ Binariser"
+                                          IsChecked="{Binding Binarize}"
+                                          IsEnabled="{Binding HasFile}"
+                                          MinHeight="28"
+                                          HorizontalAlignment="Left"
+                                          Margin="0,8,0,0"
+                                          ToolTip="Nettoie les scans : fond gris → blanc, traits → teinte pleine. Sans effet sur les PDF vectoriels nets." />
                         </StackPanel>
                     </Border>
 
@@ -291,6 +451,69 @@
                         <StackPanel>
                             <TextBlock Style="{StaticResource DataText}"
                                        Text="{Binding AlignmentSummary, TargetNullValue=non calé}" />
+                            <TextBlock Style="{StaticResource DataText}"
+                                       Text="{Binding ResidualText}"
+                                       Margin="0,4,0,0"
+                                       Visibility="{Binding ResidualText, Converter={StaticResource NullToCollapsed}}" />
+                            <TextBlock Text="{Binding AnisotropyWarning, StringFormat=⚠ {0}}"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       FontSize="{StaticResource FontSizeCaption}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0"
+                                       Visibility="{Binding AnisotropyWarning, Converter={StaticResource NullToCollapsed}}" />
+
+                            <!-- Rigide / Affine : opt-in explicite, jamais de bascule silencieuse (SEN-01) -->
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,12,0,0"
+                                        Visibility="{Binding CanUseAffine, Converter={StaticResource BoolToVisibility}}">
+                                <RadioButton Content="Rigide (2 pts)"
+                                             GroupName="AlignMode"
+                                             IsChecked="{Binding IsAffineMode, Converter={StaticResource InverseBool}}"
+                                             Foreground="{StaticResource BrushTextPrimary}" />
+                                <RadioButton Content="Affine (3 pts)"
+                                             GroupName="AlignMode"
+                                             IsChecked="{Binding IsAffineMode}"
+                                             Margin="12,0,0,0"
+                                             Foreground="{StaticResource BrushTextPrimary}" />
+                            </StackPanel>
+
+                            <!-- AJUSTER : flèches = translation fine du plan RÉVISÉ (item 3),
+                                 pas VISIBLE et cliquable — jamais seulement des modificateurs cachés -->
+                            <StackPanel Margin="0,12,0,0"
+                                        Visibility="{Binding HasAlignment, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="AJUSTER (FLÈCHES)" Style="{StaticResource PanelTitle}" />
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <TextBlock Text="pas"
+                                               Foreground="{StaticResource BrushTextSecondary}"
+                                               FontSize="{StaticResource FontSizeCaption}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0" />
+                                    <RadioButton Content="0,1"
+                                                 GroupName="NudgeStep"
+                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.1}"
+                                                 Foreground="{StaticResource BrushTextPrimary}" />
+                                    <RadioButton Content="0,5"
+                                                 GroupName="NudgeStep"
+                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.5}"
+                                                 Margin="8,0,0,0"
+                                                 Foreground="{StaticResource BrushTextPrimary}" />
+                                    <RadioButton Content="2"
+                                                 GroupName="NudgeStep"
+                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=2}"
+                                                 Margin="8,0,0,0"
+                                                 Foreground="{StaticResource BrushTextPrimary}" />
+                                    <TextBlock Text="mm"
+                                               Foreground="{StaticResource BrushTextSecondary}"
+                                               FontSize="{StaticResource FontSizeCaption}"
+                                               VerticalAlignment="Center"
+                                               Margin="8,0,0,0" />
+                                </StackPanel>
+                                <TextBlock Text="Maj = pas fin · Ctrl = pas large · cliquez le plan d'abord"
+                                           Foreground="{StaticResource BrushTextSecondary}"
+                                           FontSize="{StaticResource FontSizeCaption}"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+
                             <Button Content="Réinitialiser"
                                     Command="{Binding ResetAlignmentCommand}"
                                     IsEnabled="{Binding HasAlignment}"
@@ -312,6 +535,10 @@
                     <TextBlock Style="{StaticResource DataText}" Text="{Binding ZoomText}" />
                     <TextBlock Style="{StaticResource DataText}" Text="  ·  " />
                     <TextBlock Style="{StaticResource DataText}" Text="{Binding PagesText}" />
+                    <!-- FIA-07 : la tuile nette se rend — discret, le document reste roi -->
+                    <TextBlock Style="{StaticResource DataText}"
+                               Text="  ·  ⟳ netteté…"
+                               Visibility="{Binding IsSharpening, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
                 <TextBlock Style="{StaticResource DataText}"
                            Text="{Binding StatusMessage}"

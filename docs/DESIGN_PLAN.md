@@ -1,7 +1,8 @@
 # DESIGN_PLAN — DrawingComparator
 
-> Statut : ☑ Brouillon ☑ Auto-critiqué (Passe B) ☐ **VALIDÉ PAR L'UTILISATEUR** (obligatoire avant tout XAML)
-> Version : 1.0 — 2026-08-13
+> Statut v1.0 : ☑ Validé par l'utilisateur (cycle 1, 2026-08-13)
+> Statut v1.1 (delta cycle 2, § 11) : ☑ Brouillon ☑ Auto-critiqué (Passe B) ☐ **VALIDÉ PAR L'UTILISATEUR** (obligatoire avant tout XAML)
+> Version : 1.1 — 2026-08-13
 
 ## 1. Ancrage
 
@@ -182,4 +183,178 @@ Pendant le calage : zoom/pan restent actifs (molette + drag droit), clic gauche 
 ## 10. Écarts consacrés / reportés (dev-council n°1, PERT-04 / PERT-06)
 
 - **Consacré v1** : chargement par ligne de commande `DrawingComparator.exe base.pdf [revision.pdf]` (entrée depuis l'Explorateur). S'ajoute au mapping §4.
-- **Reportés au cycle 2 (roadmap)** : bandeau « Cette page semble vide » ; progression déterminée + annulation de l'export ; motion §7 (assombrissement 150 ms, « clac » 200 ms du calage) ; thème light (tokens définis, non implémentés). Le plan reste la référence de ces intentions ; le produit v0.1.0 ne les promet pas.
+- **Reportés au cycle 2 (roadmap)** : bandeau « Cette page semble vide » ; progression déterminée + annulation de l'export ; motion §7 (assombrissement 150 ms, « clac » 200 ms du calage) ; thème light (tokens définis, non implémentés). Le plan reste la référence de ces intentions ; le produit v0.1.0 ne les promet pas. → **Tous repris dans le delta v1.1 (§ 11).**
+
+---
+
+## 11. Delta cycle 2 (v1.1) — mode ÉVOLUTION
+
+> Règle directrice : cohérence avant nouveauté. Aucun nouvel écran, aucune nouvelle couleur, aucun
+> deuxième style. Les 8 nouveautés visibles s'insèrent dans le langage existant : l'ambre reste la seule
+> couleur d'action, le rouge/bleu reste la propriété exclusive des plans, le canvas reste vierge de chrome.
+
+### 11.1 Projets — barre d'outils et état vide enrichi
+
+La « vérité » d'une session tient en une poignée de valeurs (2 PDF, pages, matrice, opacités, teintes) :
+le projet `.dcproj` la capture. Deux points d'entrée, aucun nouvel écran :
+
+- **Barre d'outils**, groupe gauche (avant « Caler les plans ») : `[📁 Ouvrir]` `[💾 Enregistrer]`
+  en style discret (outline). Raccourcis : Ctrl+O = ouvrir un projet OU un PDF (sélecteur natif filtré
+  `.dcproj;*.pdf`), **Ctrl+S = enregistrer le projet** (convention Windows), Ctrl+Maj+S = enregistrer sous.
+  « Enregistrer » est désactivé tant que les 2 plans ne sont pas chargés (tooltip « Chargez les deux plans »).
+- **État vide** : les deux zones de dépôt restent le 1er niveau de lecture ; en dessous, une section
+  **« Reprendre »** liste les projets récents (max 8, MRU %APPDATA%) :
+
+```
+│         ┌───────────────────┐      ┌───────────────────┐              │
+│         │  ▌ PLAN DE BASE   │      │  ▌ PLAN RÉVISÉ    │              │
+│         │  Déposer un PDF   │      │  Déposer un PDF   │              │
+│         │  ou [Parcourir…]  │      │  ou [Parcourir…]  │              │
+│         └───────────────────┘      └───────────────────┘              │
+│     Les traits communs ressortiront sombres, les différences          │
+│     resteront rouges ou bleues.                                       │
+│                                                                       │
+│     REPRENDRE                                                         │
+│     ▌▌ Façade-nord-rev3        base.pdf ↔ rev3.pdf     hier 16:42     │
+│     ▌▌ Étage-2-lot-plomberie   e2.pdf ↔ e2-B.pdf       11 août        │
+│     (double liseré rouge|bleu = miniature d'identité du projet)       │
+```
+
+  Hiérarchie préservée : 1er = zones de dépôt · 2e = phrase du principe · 3e = liste Reprendre
+  (titres en Caption TextSecondary, entrées en Corps, dates en Cascadia Mono).
+- **Chemin introuvable à l'ouverture** : ContentDialog conforme au ton du plan — « base.pdf n'est plus
+  à l'emplacement enregistré (réseau déconnecté ?). » + actions [Rechercher à côté du projet] [Parcourir…]
+  [Retirer des récents]. Jamais d'échec silencieux.
+
+### 11.2 Calage fin au clavier (mode ajustement)
+
+S'ajoute à l'élément signature sans le concurrencer. Une fois un calage posé (et à tout moment hors
+pose de points), le **panneau Calage** devient l'instrument de retouche :
+
+```
+│ Calage                    │
+│ ✓ calé   résiduel 0,4 mm  │  ← résiduel : § 11.4
+│ é=0.998  θ=+0.4°          │
+│ AJUSTER (flèches)         │
+│ pas  [0,1] [0,5] [2] mm   │  ← segmented, valeur active en ambre
+│ Maj = pas ↓   Ctrl = pas ↑ │  ← Caption
+│ [Réinitialiser]           │
+```
+
+- Flèches = translation du plan RÉVISÉ en mm papier de la BASE ; le pas actif est **visible** (pas
+  seulement des modificateurs cachés) ; Maj/Ctrl basculent temporairement d'un cran (aide en Caption).
+- Le canvas doit avoir le focus (clic ou Tab) ; anneau de focus visible sur le canvas (conforme § clavier).
+- Chaque nudge rafraîchit é/θ/résiduel en Cascadia Mono — la retouche se mesure, elle ne se devine pas.
+
+### 11.3 Scrim de calage 60 % + motion (§ 6/§ 7 enfin implémentés)
+
+Décision compositeur actée par le LLM-Council : la Strength multiply ne peut qu'éclaircir → le scrim
+est un **voile XAML plein canvas** (Background 60 % d'opacité) posé PAR-DESSUS le composite, le calque
+actif de l'étape courante redessiné à pleine lumière au-dessus. Entrée 150 ms ease-out, « clac » de
+200 ms au commit du 4e clic (retour pleine lumière pendant que la transformation s'applique). Aucun
+autre mouvement ajouté.
+
+### 11.4 3e point de contrôle + mode affine (opt-in explicite)
+
+Extension du bandeau de calage, après le 4e clic :
+
+```
+│  ● 1  ● 2  ● 3  ● 4   ✓ Calé — résiduel : posez un point de contrôle  │
+│  [+ Point de contrôle (facultatif)]                    [Terminer]     │
+```
+
+- Le 5e/6e clic (couple de contrôle) n'altère PAS la transformation : il affiche **« résiduel 0,4 mm »**
+  dans le bandeau et le panneau Calage. C'est la réponse à « mon calage est-il bon ? ».
+- **Mode affine** : dans le panneau Calage, segmented `Rigide (2 pts) | Affine (3 pts)` — Affine
+  désactivé tant qu'un 3e couple n'existe pas ; jamais de bascule automatique (SEN-01). En mode affine,
+  le panneau affiche é_x, é_y et cisaillement ; si |é_x/é_y − 1| > 0,2 %, ligne d'avertissement en
+  Caption avec icône ⚠ (TextSecondary — pas Danger : c'est une information, pas une erreur) :
+  « Échelles X/Y différentes : l'affine déforme le plan révisé. »
+- Points de contrôle refusés si colinéaires : message inline sous le bandeau (même patron que « points
+  trop proches »).
+
+### 11.5 Export : progression déterminée, annulation, snackbar
+
+- Dialogue d'export : ProgressBar **déterminée** (1 tick par bande rendue) + bouton [Annuler] actif
+  pendant tout le rendu. La grille du dialogue ne bouge pas (pas de reflow pendant la progression).
+- Succès → **Snackbar** en bas du canvas, Surface + liseré Accent, 150 ms : « Exporté → C:\…\diff.png
+  [Ouvrir le dossier] », auto-fermeture 5 s. Remplace la mention en barre de statut.
+- Échec → Snackbar Danger (patron § 5 inchangé).
+
+### 11.6 Binarisation par calque (PDF scannés)
+
+Dans chaque **carte calque**, sous le slider d'opacité : ToggleButton icône ◐ + libellé court
+« Binariser » (tooltip : « Nettoie les scans : fond gris → blanc, traits → teinte pleine. Sans effet
+sur les PDF vectoriels nets. ») Toggle indépendant par plan, état sauvé dans le `.dcproj`. Pas de
+seuil réglable en v1 (valeur par défaut intelligente ; divulgation progressive — un réglage viendra
+si l'usage le réclame).
+
+### 11.7 Bandeau « page semble vide »
+
+Patron § 5 inchangé : bandeau fin en haut du canvas, Surface, texte Caption « Cette page semble vide —
+vérifier le n° de page », fermeture ✕, disparaît au changement de page. Jamais de dialogue pour ça.
+
+### 11.8 Latence du rendu de région (FIA-07)
+
+Le fond pleine page reste TOUJOURS affiché (jamais de flash blanc) ; pendant le rendu de la tuile
+nette : point de progression discret en **barre de statut** (« ⟳ netteté… » en Caption, Cascadia Mono)
+— pas de spinner sur le canvas, le document reste roi.
+
+### 11.9 Thème light
+
+Détection système **au démarrage uniquement** (SEN-13). Colonne light des tokens § 2 appliquée au
+chrome seul — le canvas est déjà light par construction (multiply sur fond blanc). Aucun switch runtime.
+
+### 11.10 Mapping des nouveautés (aucune orpheline)
+
+| Fonctionnalité cycle 2 | Écran | Emplacement / contrôle |
+|---|---|---|
+| Enregistrer / ouvrir un projet | Principal | Barre d'outils groupe gauche + Ctrl+S / Ctrl+O / Ctrl+Maj+S |
+| Projets récents | Principal (état vide) | Section « Reprendre », 8 entrées MRU, double liseré identitaire |
+| Chemin PDF introuvable | Dialogue | ContentDialog « Rechercher à côté / Parcourir / Retirer » |
+| Calage fin clavier + pas réglable | Principal (calé) | Panneau Calage, bloc « AJUSTER », segmented 0,1/0,5/2 mm |
+| Scrim 60 % + motion calage | Mode calage | Voile XAML plein canvas + « clac » 200 ms |
+| 3e point + erreur résiduelle | Mode calage | Bandeau étape 5 facultative + « résiduel x mm » |
+| Mode affine opt-in + anisotropie | Principal | Panneau Calage, segmented Rigide/Affine + é_x é_y cisaillement |
+| Binarisation par calque | Principal | ToggleButton ◐ dans chaque carte calque |
+| Progression + annulation export | Dialogue export | ProgressBar déterminée + [Annuler] |
+| Snackbar d'export | Principal | Snackbar bas de canvas, liseré Accent / Danger |
+| Bandeau page vide | Principal | Bandeau fin haut de canvas |
+| Indicateur netteté (FIA-07) | Principal | Barre de statut, « ⟳ netteté… » |
+| Thème light | Global | Swap de dictionnaire de tokens au démarrage |
+
+### 11.11 Auto-critique du delta (Passe B)
+
+- **« Plan générique ? »** Non sur trois points, oui corrigé sur un : (1) la liste « Reprendre » avec
+  double liseré rouge|bleu est une signature propre à CETTE app (l'identité d'un projet EST sa paire de
+  plans) ; (2) le pas de nudge affiché en segmented plutôt qu'en tooltip caché découle de la philosophie
+  « la précision se met en scène » du viseur ; (3) l'avertissement d'anisotropie en langage métier
+  (« déforme le plan révisé ») plutôt qu'en jargon (« transformation non conforme »). Corrigé : ma
+  première version mettait « Enregistrer le projet » en bouton accentué — faute de hiérarchie, l'action
+  primaire de l'écran reste « Caler les plans » ; rétrogradé en outline.
+- **Charge cognitive (7±2)** : la carte calque porte désormais liseré + nom + page + opacité +
+  binarisation = 5 éléments, OK. La barre d'outils passe à 5 actions en 3 groupes (projet | calage |
+  export), OK. Le panneau Calage est le plus chargé (état, é/θ, résiduel, AJUSTER, pas, Rigide/Affine,
+  Réinitialiser) : accepté car c'est le poste de pilotage d'un outil de mesure, densité assumée § 1 —
+  mais le bloc AJUSTER n'apparaît QUE lorsqu'un calage existe (divulgation progressive).
+- **Clavier** : le nudge exige le focus canvas — risque de « flèches mortes » si le focus est ailleurs.
+  Mitigation : clic sur le canvas = focus (déjà le cas), anneau de focus visible, et le panneau Calage
+  affiche « (flèches) » en rappel. Assumé.
+- **Points faibles restants** : (a) la section Reprendre allonge l'état vide — sur petite fenêtre elle
+  passe sous la ligne de flottaison, accepté (les zones de dépôt priment) ; (b) « Binariser » sans
+  réglage de seuil peut décevoir sur un scan très sombre — assumé v1, le toggle est réversible ;
+  (c) l'étape 5 facultative complexifie légèrement le bandeau — mitigée par [Terminer] toujours visible.
+- **Accessoire retiré (Chanel)** : la vignette-aperçu du canvas dans les entrées Reprendre (coût de
+  génération/stockage pour un gain faible — le double liseré + noms de fichiers identifient déjà) ;
+  le badge « NOUVEAU » sur les fonctions du cycle 2 (l'app n'a qu'un utilisateur, il sait ce qui est neuf).
+
+### 11.12 Journal des choix rejetés (delta)
+
+| Proposition | Raison du rejet | Date |
+|---|---|---|
+| « Enregistrer le projet » en bouton accentué | Concurrence l'action primaire « Caler les plans » ; l'ambre reste unique | 2026-08-13 |
+| Vignette-aperçu dans les projets récents | Coût élevé, gain faible ; le double liseré + noms suffisent | 2026-08-13 |
+| Pas de nudge uniquement via Maj/Ctrl (invisible) | Découvrabilité nulle ; le pas actif doit être visible et cliquable | 2026-08-13 |
+| Avertissement anisotropie en Danger rouge | Le rouge appartient au plan 1 / aux erreurs ; l'anisotropie est une info, pas une faute | 2026-08-13 |
+| Slider de seuil de binarisation | Divulgation progressive : v1 = toggle, réglage seulement si l'usage le réclame | 2026-08-13 |
+| Sauvegarde auto du .dcproj à côté des PDF | Anti-pattern sur partages réseau d'équipe (LLM-Council) ; emplacement choisi + MRU %APPDATA% | 2026-08-13 |

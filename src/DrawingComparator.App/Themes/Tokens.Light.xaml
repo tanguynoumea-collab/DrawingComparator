@@ -2,16 +2,19 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
 
-    <!-- ═══ Couleurs (DESIGN_PLAN §2 — thème sombre « négatoscope ») ═══ -->
-    <Color x:Key="ColorBackground">#16181D</Color>
-    <Color x:Key="ColorSurface">#21242C</Color>
-    <Color x:Key="ColorTextPrimary">#E8EAED</Color>
-    <Color x:Key="ColorTextSecondary">#9AA0A6</Color>
-    <Color x:Key="ColorAccent">#E8B93C</Color>
-    <Color x:Key="ColorAccentText">#16181D</Color>
-    <Color x:Key="ColorDanger">#E5534B</Color>
+    <!-- ═══ Couleurs (DESIGN_PLAN §2 — colonne LIGHT ; chrome seul, le canvas reste blanc) ═══
+         DUPLIQUÉ VOLONTAIREMENT avec Tokens.xaml (les StaticResource des vues se résolvent
+         au chargement : un seul des deux fichiers est mergé, choisi au démarrage — SEN-13).
+         Toute retouche de token doit être reportée dans LES DEUX fichiers. -->
+    <Color x:Key="ColorBackground">#F2F3F5</Color>
+    <Color x:Key="ColorSurface">#FFFFFF</Color>
+    <Color x:Key="ColorTextPrimary">#1B1D23</Color>
+    <Color x:Key="ColorTextSecondary">#5F6570</Color>
+    <Color x:Key="ColorAccent">#B8860B</Color>
+    <Color x:Key="ColorAccentText">#FFFFFF</Color>
+    <Color x:Key="ColorDanger">#C62828</Color>
 
-    <!-- Couleurs métier : les teintes des plans. Constantes du domaine, pas des couleurs d'interface. -->
+    <!-- Couleurs métier : les teintes des plans. Constantes du domaine, identiques dans les deux thèmes. -->
     <Color x:Key="ColorTintBase">#D32F2F</Color>
     <Color x:Key="ColorTintRevision">#1E5AC8</Color>
 
@@ -25,8 +28,7 @@
     <SolidColorBrush x:Key="BrushTintBase" Color="{StaticResource ColorTintBase}" />
     <SolidColorBrush x:Key="BrushTintRevision" Color="{StaticResource ColorTintRevision}" />
 
-    <!-- ═══ Espacement : grille de 4 px (PERT-07 : seuls les crans réellement consommés
-         sont déclarés ; l'échelle complète XS→XL reste documentée au DESIGN_PLAN §2) ═══ -->
+    <!-- ═══ Espacement : grille de 4 px (PERT-07 : seuls les crans consommés) ═══ -->
     <Thickness x:Key="SpaceM">16</Thickness>
     <Thickness x:Key="SpaceL">24</Thickness>
 

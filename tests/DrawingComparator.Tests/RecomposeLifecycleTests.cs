@@ -13,21 +13,11 @@ namespace DrawingComparator.Tests;
 /// </summary>
 public class RecomposeLifecycleTests
 {
-    private sealed class StubDialogs : IUserDialogs
-    {
-        public Task ShowErrorAsync(string title, string message) => Task.CompletedTask;
-        public string? PickPdfFile(string title) => null;
-        public ExportRequest? ShowExportDialog() => null;
-    }
-
     /// <summary>Compositeur contrôlable : compte les appels et peut bloquer jusqu'à signal.</summary>
     private sealed class GatedCompositor : IComparisonCompositor
     {
         public int ComposeCalls;
         public SemaphoreSlim? Gate;
-
-        public void Compose(SKCanvas canvas, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers)
-            => canvas.Clear(SKColors.White);
 
         public SKBitmap ComposeToBitmap(SKSizeI size, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers)
         {
@@ -48,7 +38,11 @@ public class RecomposeLifecycleTests
     }
 
     private static MainViewModel MakeVm(GatedCompositor compositor)
-        => new(new PdfDocumentService(), compositor, new ExportService(compositor), new StubDialogs());
+    {
+        var pdfService = new PdfDocumentService();
+        return new MainViewModel(pdfService, compositor, new ExportService(compositor, pdfService),
+            new StubDialogs(), new StubRecents());
+    }
 
     [Fact]
     public async Task RapidRequests_AreCoalesced_LastOneWins()
@@ -114,8 +108,9 @@ public class RecomposeLifecycleTests
     public async Task ComposeFailure_StopsLoop_SetsStatus_NoThrow()
     {
         var compositor = new ThrowingCompositor();
-        var vm = new MainViewModel(new PdfDocumentService(), compositor,
-            new ExportService(compositor), new StubDialogs());
+        var pdfService = new PdfDocumentService();
+        var vm = new MainViewModel(pdfService, compositor,
+            new ExportService(compositor, pdfService), new StubDialogs(), new StubRecents());
 
         vm.SetViewportSize(new SKSizeI(8, 8));
         await (vm.CurrentRecompose ?? Task.CompletedTask);
@@ -130,7 +125,6 @@ public class RecomposeLifecycleTests
     private sealed class ThrowingCompositor : IComparisonCompositor
     {
         public int Calls;
-        public void Compose(SKCanvas canvas, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers) { }
         public SKBitmap ComposeToBitmap(SKSizeI size, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers)
         {
             Calls++;

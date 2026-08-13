@@ -25,6 +25,16 @@ public interface IPdfDocumentService
     /// Le document doit être ouvert. Le bitmap retourné appartient à l'appelant.
     /// </summary>
     Task<SKBitmap> RenderPageAsync(string filePath, int pageIndex, float dpi, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rasterise une RÉGION de page (points PDF, origine haut-gauche) au DPI demandé — la netteté
+    /// vectorielle à tout zoom, à mémoire bornée : le budget de <see cref="PdfDocumentService.CapDpi"/>
+    /// s'applique à la taille de la région, pas de la page. La région est intersectée avec la page ;
+    /// une intersection vide est une erreur d'appel (<see cref="ArgumentException"/>).
+    /// Le bitmap retourné appartient à l'appelant ; son emprise réelle en points PDF est celle de
+    /// la région intersectée (l'échelle réelle se mesure sur les pixels retournés, par axe).
+    /// </summary>
+    Task<SKBitmap> RenderRegionAsync(string filePath, int pageIndex, SKRect regionPoints, float dpi, CancellationToken ct = default);
 }
 
 /// <summary>Échec d'ouverture ou de rendu d'un PDF, avec un message destiné à l'utilisateur.</summary>

@@ -38,3 +38,29 @@ public sealed class TintToBrushConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>Négation booléenne bidirectionnelle (segmented Rigide/Affine : le bouton « Rigide » = !IsAffineMode).</summary>
+public sealed class InverseBoolConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is not true;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is not true;
+}
+
+/// <summary>
+/// Égalité entre un double lié et le paramètre du XAML (segmented du pas d'ajustement) :
+/// coché ⇔ valeur = paramètre ; cocher pousse le paramètre dans la propriété.
+/// </summary>
+public sealed class DoubleEqualsConverter : IValueConverter
+{
+    private static double Param(object? parameter)
+        => double.Parse((string)parameter!, CultureInfo.InvariantCulture);
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is double d && Math.Abs(d - Param(parameter)) < 0.0001;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? Param(parameter) : Binding.DoNothing;
+}

@@ -20,6 +20,9 @@ public class ExportServiceTests
     private static string TempPng()
         => Path.Combine(Path.GetTempPath(), $"dc-test-{Guid.NewGuid():N}.png");
 
+    private static ExportService MakeService(FakePdfDocumentService? pdf = null)
+        => new(new ComparisonCompositor(), pdf ?? new FakePdfDocumentService());
+
     [Fact]
     public void ComputeExportScale_UnderBudget_KeepsRequestedDpi()
     {
@@ -30,35 +33,81 @@ public class ExportServiceTests
     }
 
     [Fact]
-    public void ComputeExportScale_OverBudget_ReducesToMaxPixels()
+    public void ComputeExportScale_A0At300_IsNowHonoured()
     {
-        // A0 à 600 DPI ≈ 558 Mpx : doit redescendre exactement au plafond.
+        // SEN-11 : la promesse du cycle — un A0 à 300 DPI (~140 Mpx) tient dans le budget
+        // feuille (rendu par bandes) : le DPI annoncé est le DPI réel.
+        var (_, effectiveDpi) = ExportService.ComputeExportScale(new SKSize(2384, 3370), 300);
+        Assert.Equal(300f, effectiveDpi, 0.01f);
+    }
+
+    [Fact]
+    public void ComputeExportScale_OverBudget_ReducesToMaxSheetPixels()
+    {
+        // A0 à 600 DPI ≈ 558 Mpx : doit redescendre exactement au plafond feuille.
         var sheet = new SKSize(2384, 3370);
         var (scale, effectiveDpi) = ExportService.ComputeExportScale(sheet, 600);
 
         double pixels = (double)sheet.Width * scale * sheet.Height * scale;
-        Assert.InRange(pixels, ExportService.MaxPixels * 0.99, ExportService.MaxPixels * 1.01);
+        Assert.InRange(pixels, ExportService.MaxSheetPixels * 0.99, ExportService.MaxSheetPixels * 1.01);
         Assert.True(effectiveDpi < 600);
         Assert.Equal(scale * 72f, effectiveDpi, 0.01f);
     }
 
     [Fact]
-    public async Task ExportPng_WritesDecodableFileWithExpectedSize()
+    public async Task ExportSheet_RendersBands_ReportsProgress_WritesExpectedSize()
     {
-        using var raster = MakeRaster();
-        var service = new ExportService(new ComparisonCompositor());
-        var layers = new List<LayerRenderInfo> { new(raster, 1f, SKMatrix.Identity, LayerTint.Red, 1f) };
+        var fake = new FakePdfDocumentService { PageSize = new SKSize(400, 2000) };
+        var service = MakeService(fake);
+        var layers = new List<ExportLayer>
+        {
+            new("base.pdf", 0, fake.PageSize, SKMatrix.Identity, LayerTint.Red, 1f),
+            new("rev.pdf", 0, fake.PageSize, SKMatrix.CreateTranslation(10, 5), LayerTint.Blue, 1f),
+        };
         string path = TempPng();
+        var reports = new List<double>();
         try
         {
-            // Feuille 100×50 pt à 144 DPI → 200×100 px.
-            float dpi = await service.ExportPngAsync(path, new SKSize(100, 50), 144, layers);
+            // 400×2000 pt à 144 DPI → 800×4000 px ; bande = 16 Mpx / 800 ≥ 4000 → au moins 1 bande.
+            float dpi = await service.ExportSheetPngAsync(path, new SKSize(400, 2000), 144, layers,
+                new SynchronousProgress(reports));
 
             Assert.Equal(144f, dpi, 0.5f);
             using var decoded = SKBitmap.Decode(path);
             Assert.NotNull(decoded);
-            Assert.Equal(200, decoded.Width);
-            Assert.Equal(100, decoded.Height);
+            Assert.Equal(800, decoded.Width);
+            Assert.Equal(4000, decoded.Height);
+
+            Assert.NotEmpty(reports);
+            Assert.Equal(1.0, reports[^1], 3);
+            Assert.True(fake.RenderRegionCalls >= 2, "chaque calque de chaque bande passe par le rendu de région");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private sealed class SynchronousProgress(List<double> sink) : IProgress<double>
+    {
+        public void Report(double value) => sink.Add(value);
+    }
+
+    [Fact]
+    public async Task ExportSheet_HonoursRequestedDpi_PerBandRegion()
+    {
+        // Le service demande chaque bande au DPI effectif : c'est ce qui tue SEN-11.
+        var fake = new FakePdfDocumentService { PageSize = new SKSize(500, 500) };
+        var service = MakeService(fake);
+        var layers = new List<ExportLayer> { new("base.pdf", 0, fake.PageSize, SKMatrix.Identity, LayerTint.Red, 1f) };
+        string path = TempPng();
+        try
+        {
+            await service.ExportSheetPngAsync(path, fake.PageSize, 300, layers);
+            lock (fake.RegionRequests)
+            {
+                Assert.All(fake.RegionRequests, r => Assert.Equal(300f, r.Dpi, 0.5f));
+            }
         }
         finally
         {
@@ -67,17 +116,19 @@ public class ExportServiceTests
     }
 
     [Fact]
-    public async Task ExportPng_Cancelled_CreatesNoFile()
+    public async Task ExportSheet_Cancelled_CreatesNoFile()
     {
-        using var raster = MakeRaster();
-        var service = new ExportService(new ComparisonCompositor());
-        var layers = new List<LayerRenderInfo> { new(raster, 1f, SKMatrix.Identity, LayerTint.Red, 1f) };
+        var service = MakeService();
+        var layers = new List<ExportLayer>
+        {
+            new("base.pdf", 0, new SKSize(100, 50), SKMatrix.Identity, LayerTint.Red, 1f),
+        };
         string path = TempPng();
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => service.ExportPngAsync(path, new SKSize(100, 50), 144, layers, cts.Token));
+            () => service.ExportSheetPngAsync(path, new SKSize(100, 50), 144, layers, ct: cts.Token));
         Assert.False(File.Exists(path));
     }
 
@@ -85,7 +136,7 @@ public class ExportServiceTests
     public async Task ExportViewPng_UsesGivenViewportAndMatrix()
     {
         using var raster = MakeRaster();
-        var service = new ExportService(new ComparisonCompositor());
+        var service = MakeService();
         var layers = new List<LayerRenderInfo> { new(raster, 1f, SKMatrix.Identity, LayerTint.Red, 1f) };
         string path = TempPng();
         try
@@ -138,5 +189,14 @@ public class PdfRenderBudgetTests
         Assert.True(dpi < 300);
         Assert.InRange(page.Height * scale, PdfDocumentService.MaxRenderEdge * 0.99, PdfDocumentService.MaxRenderEdge * 1.01);
         Assert.True(pixels <= PdfDocumentService.MaxRenderPixels);
+    }
+
+    [Fact]
+    public void CapDpi_SmallRegion_KeepsHighDpi()
+    {
+        // Le cœur du point 1 : le budget porte sur la RÉGION — une tuile de viewport
+        // (quelques centaines de points) garde son DPI de vue même très élevé.
+        float dpi = PdfDocumentService.CapDpi(new SKSize(300, 200), 1200);
+        Assert.Equal(1200f, dpi, 0.01f);
     }
 }

@@ -3,30 +3,41 @@
   "projet": "DrawingComparator",
   "version_courante": "0.1.0",
   "route": "full",
-  "phase": "IDLE",
-  "phase_status": "cycle_1_termine",
+  "phase": "GSD",
+  "phase_status": "en_cours",
   "cycle": {
-    "numero": 1,
+    "numero": 2,
     "demarre_le": "2026-08-13",
     "idees": [
-      "Superposition de deux plans PDF teintés (rouge/bleu) avec fusion colorée révélant les différences",
-      "Alignement du plan 2 sur le plan 1 par point de référence (ex. angle de mur)",
-      "Redimensionnement/rotation du plan 2 ancré au point de référence via un second point de correspondance"
+      "P1-1 Qualité du raster : rendu par région PDFium au DPI de la vue (offset de région dans LayerRenderInfo, cf. SEN-14)",
+      "P1-2 Projets de superposition : sauvegarde/réouverture (2 PDF, pages, matrice, opacités, teintes) + projets récents au démarrage",
+      "P1-3 Calage fin au clavier : flèches translatent le plan révisé, pas réglable (0,1/0,5/2 mm papier, Maj/Ctrl)",
+      "P2-4 Assombrissement plein canvas 60 % en mode calage",
+      "P2-5 Snackbar de confirmation d'export",
+      "P2-6 Thème light (ambition à trancher, cf. SEN-13) + tokens light",
+      "P2-7 3e point de contrôle optionnel + erreur résiduelle + affine 3 points (corriger fallback SEN-01)",
+      "P2-8 Binarisation optionnelle pour PDF scannés",
+      "P2-9 Reportés DESIGN_PLAN §10 : bandeau page vide, progression+annulation export, motion calage",
+      "P3-10 Tests complémentaires TST-03/04/05/06/07/08",
+      "P3-11 Fiabilité FIA-07, SEN-04, SEN-08, SEN-05",
+      "P3-12 Nettoyage PERT-01/SEN-12, PERT-05, PERT-07, ARC-08, SEN-07",
+      "P3-13 Sécurité/ops SEC-05, SEC-04, SEC-02, SEN-11",
+      "P3-14 CI GitHub Actions : build+tests+format sur PR et tag, publish d'artefact en Release"
     ],
     "impact_ui": true,
-    "mode_daedalus": "CREATION"
+    "mode_daedalus": "EVOLUTION"
   },
   "iterations": {
     "design_review": 0,
     "design_review_max": 3,
-    "dev_council": 1,
+    "dev_council": 0,
     "dev_council_max": 3
   },
   "checkpoints": {
     "plan_design_valide": true,
-    "triage_findings": true,
-    "go_publication": true,
-    "confirmation_roadmap": true
+    "triage_findings": false,
+    "go_publication": false,
+    "confirmation_roadmap": false
   },
   "pending": {
     "findings_critiques": [],
@@ -36,6 +47,7 @@
     "design_plan": "docs/DESIGN_PLAN.md",
     "rapports": [
       ".zeus/reports/llm-council-2026-08-13.md",
+      ".zeus/reports/llm-council-cycle2-2026-08-13.md",
       ".zeus/reports/gate-2026-08-13.log",
       ".zeus/reports/design-review-1.md",
       ".zeus/reports/dev-council-1.md",
@@ -54,6 +66,10 @@
     "2026-08-13 — DEV-COUNCIL n°1 (7 auditeurs + sceptique + cross-challenge + arbitrage) : 1 Bloquant (FIA-01), 2 Majeurs, ~21 Mineurs. ✅ CHECKPOINT 2 : triage utilisateur = P1+P2 corrigés (itération dev_council 1/3), P3 → roadmap. Re-gate vert (28/28, analyzers stricts, warnings=erreurs), re-vérification ciblée : 5 fermés + FIAB-1 corrigé. Exe single-file 79 Mo v0.1.0. ✅ → DEV-SENIOR",
     "2026-08-13 — DEV-SENIOR n°1 (5 points AUDIT_POINTS) : GO AVEC RÉSERVES — SEN-09 Majeur (luminance canal R) + SEN-10 corrigés immédiatement (itération 2/3), gate re-passé 29/29, publish 79,4 Mo. Restes → roadmap. ✅ → PUBLICATION (attente checkpoint 3)",
     "2026-08-13 — ✅ CHECKPOINT 3 : GO publication — v0.1.0 taguée, CHANGELOG, exe 79,4 Mo + SHA-256, AUDIT_POINTS ratifiés. UAT utilisateur sur l'app réelle : 3 demandes (qualité raster, projets sauvegardés + récents, calage fin aux flèches clavier à pas réglable). ✅ CHECKPOINT 4 : roadmap validée avec ces ajouts → docs/ROADMAP.md (13 items, priorité 1 = demandes UAT). Cycle 1 clos, compteurs à zéro, état IDLE.",
-    "2026-08-13 — Publication GitHub (demande utilisateur, protocole §4-6) : repo public tanguynoumea-collab/DrawingComparator créé, main + tag v0.1.0 poussés, Release latest avec DrawingComparator-v0.1.0-win-x64.zip (77,6 Mo) + SHA256SUMS.txt. CI absente → signalée, ajoutée à la roadmap (item 14)."
+    "2026-08-13 — Publication GitHub (demande utilisateur, protocole §4-6) : repo public tanguynoumea-collab/DrawingComparator créé, main + tag v0.1.0 poussés, Release latest avec DrawingComparator-v0.1.0-win-x64.zip (77,6 Mo) + SHA256SUMS.txt. CI absente → signalée, ajoutée à la roadmap (item 14).",
+    "2026-08-13 — Ouverture cycle 2 sur demande explicite : TOUS les points de docs/ROADMAP.md (14 items). OneDrive 00_ROADMAP vérifié : aucun fichier DrawingComparator, docs/ROADMAP.md est la source. Route FULL, DAEDALUS mode ÉVOLUTION. ✅ ROADMAP → LLM-COUNCIL",
+    "2026-08-13 — LLM-Council cycle 2 (5 membres + 5 relecteurs aveugles avec vérification sur pièces) : Rigoriste 1er unanime. Fait pivot : PDFtoImage 5.3.0 expose Bounds/DpiRelativeToBounds (rapport cycle 1 périmé sur ce point, pas de migration de binding). Architecture bi-raster + export tuilé, 5 vagues V0-V4, 7b affine en opt-in explicite. Rapport .zeus/reports/llm-council-cycle2-2026-08-13.md. ✅ LLM-COUNCIL → UX-DESIGN",
+    "2026-08-13 — DAEDALUS mode ÉVOLUTION : delta v1.1 rédigé dans docs/DESIGN_PLAN.md §11 (projets/Reprendre, bloc AJUSTER, scrim XAML, étape 5 + affine opt-in, snackbar export, binarisation ◐, bandeau page vide, indicateur netteté, light au démarrage). Auto-critiqué. ⏸ ATTENTE CHECKPOINT 1 : validation humaine du plan",
+    "2026-08-13 — ✅ CHECKPOINT 1 : delta v1.1 validé par l'utilisateur (« valide »). Plan contractuel. ✅ UX-DESIGN → GSD (mode dégradé : .zeus/tasks.md cycle 2, vagues V0-V4)"
   ]
 }

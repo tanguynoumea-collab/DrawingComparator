@@ -59,7 +59,66 @@ public static class AlignmentMath
         return (scale, rotation);
     }
 
+    /// <summary>
+    /// Transformation affine exacte qui envoie p1→q1, p2→q2, p3→q3 (deux systèmes 3×3 résolus
+    /// par Cramer en double précision). Contrairement à la similitude, elle porte des échelles
+    /// X/Y distinctes et un cisaillement : à n'appliquer QUE sur choix explicite de l'utilisateur,
+    /// jamais en repli silencieux (SEN-01), et avec l'anisotropie affichée (cf. <see cref="DecomposeAffine"/>).
+    /// </summary>
+    /// <exception cref="DegenerateAlignmentException">points colinéaires ou trop proches.</exception>
+    public static SKMatrix ComputeAffine(SKPoint p1, SKPoint q1, SKPoint p2, SKPoint q2, SKPoint p3, SKPoint q3)
+    {
+        // Aire signée ×2 du triangle source ; la hauteur minimale du triangle décide de la
+        // stabilité du système (des points quasi colinéaires démultiplient le moindre bruit de clic).
+        double det = (p2.X - p1.X) * (double)(p3.Y - p1.Y) - (p3.X - p1.X) * (double)(p2.Y - p1.Y);
+        double maxSide = Math.Max(Distance(p1, p2), Math.Max(Distance(p1, p3), Distance(p2, p3)));
+        if (maxSide < MinPointDistance || Math.Abs(det) / maxSide < MinPointDistance)
+            throw new DegenerateAlignmentException(
+                "Les trois points sont alignés ou trop proches : impossible de calculer une transformation affine stable.");
+
+        // M·[x y 1]ᵀ : chaque ligne (a b c) se résout indépendamment par Cramer sur P = [[xᵢ yᵢ 1]]
+        // (cofacteurs développés : colonne 1 = x, colonne 2 = y, colonne 3 = 1).
+        (float A, float B, float C) SolveRow(double r1, double r2, double r3)
+        {
+            double dA = r1 * (p2.Y - (double)p3.Y) + r2 * (p3.Y - (double)p1.Y) + r3 * (p1.Y - (double)p2.Y);
+            double dB = r1 * (p3.X - (double)p2.X) + r2 * (p1.X - (double)p3.X) + r3 * (p2.X - (double)p1.X);
+            double dC = r1 * (p2.X * (double)p3.Y - p3.X * (double)p2.Y)
+                      + r2 * (p3.X * (double)p1.Y - p1.X * (double)p3.Y)
+                      + r3 * (p1.X * (double)p2.Y - p2.X * (double)p1.Y);
+            return ((float)(dA / det), (float)(dB / det), (float)(dC / det));
+        }
+
+        var (a, b, c) = SolveRow(q1.X, q2.X, q3.X);
+        var (d, e, f) = SolveRow(q1.Y, q2.Y, q3.Y);
+        return new SKMatrix(a, b, c,
+                            d, e, f,
+                            0, 0, 1);
+    }
+
+    /// <summary>
+    /// Décomposition d'une affine générale pour l'affichage : échelles X/Y (décomposition QR,
+    /// scaleY signé par le déterminant), rotation en degrés, cisaillement. Pour une similitude,
+    /// ScaleX = ScaleY et Shear = 0.
+    /// </summary>
+    public static (double ScaleX, double ScaleY, double RotationDegrees, double Shear) DecomposeAffine(SKMatrix m)
+    {
+        double a = m.ScaleX, b = m.SkewX, d = m.SkewY, e = m.ScaleY;
+        double scaleX = Math.Sqrt(a * a + d * d);
+        double det = a * e - b * d;
+        double scaleY = scaleX == 0 ? 0 : det / scaleX;
+        double rotation = Math.Atan2(d, a) * 180.0 / Math.PI;
+        double shear = scaleX == 0 || scaleY == 0 ? 0 : (a * b + d * e) / (scaleX * scaleX);
+        return (scaleX, scaleY, rotation, shear);
+    }
+
+    /// <summary>Erreur résiduelle du point de contrôle : ‖M·p − q‖ convertie en millimètres papier.</summary>
+    public static double ResidualMm(SKMatrix m, SKPoint p, SKPoint q)
+        => Distance(m.MapPoint(p), q) * 25.4 / 72.0;
+
     private static float Length(SKPoint v) => (float)Math.Sqrt(v.X * v.X + v.Y * v.Y);
+
+    private static double Distance(SKPoint a, SKPoint b)
+        => Math.Sqrt((a.X - b.X) * (double)(a.X - b.X) + (a.Y - b.Y) * (double)(a.Y - b.Y));
 }
 
 /// <summary>Points de calage invalides (confondus ou trop proches pour définir une échelle).</summary>

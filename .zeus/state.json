@@ -1,10 +1,10 @@
 {
   "$schema_note": "État du pipeline ZEUS — commité avec le projet. Mis à jour à chaque transition de phase.",
   "projet": "DrawingComparator",
-  "version_courante": "0.0.0",
+  "version_courante": "0.1.0",
   "route": "full",
-  "phase": "PUBLICATION",
-  "phase_status": "attente_checkpoint_3",
+  "phase": "IDLE",
+  "phase_status": "cycle_1_termine",
   "cycle": {
     "numero": 1,
     "demarre_le": "2026-08-13",
@@ -25,22 +25,12 @@
   "checkpoints": {
     "plan_design_valide": true,
     "triage_findings": true,
-    "go_publication": false,
-    "confirmation_roadmap": false
+    "go_publication": true,
+    "confirmation_roadmap": true
   },
   "pending": {
     "findings_critiques": [],
-    "pour_roadmap": [
-      "Assombrissement plein canvas à 60 % en mode calage (au lieu de l'atténuation du calque inactif)",
-      "Snackbar de confirmation d'export (actuellement barre de statut)",
-      "Thème light (tokens définis au DESIGN_PLAN, non implémentés)",
-      "Rendu par région PDFium au zoom profond (netteté vectorielle, prévu v1.1 au LLM-Council)",
-      "3e point de contrôle optionnel affichant l'erreur résiduelle + affine 3 points (risque anisotropie, LLM-Council)",
-      "Binarisation optionnelle pour PDF scannés (LLM-Council)",
-      "P3 dev-council n°1 : tests chemins d'erreur PDF + fake service (TST-03/04), tests zoom/pan + calage sous vue zoomée (TST-05), test UndoAlignmentPoint (TST-06), tests ExportAsync VM (TST-07/08)",
-      "P3 dev-council n°1 : latence PDFium à afficher (FIA-07), câbler ou retirer ClearFile (PERT-01), privatiser Compose(SKCanvas) (PERT-05), tokens orphelins (PERT-07), rotation du crash log (SEC-05), cadence de mise à jour PDFium (SEC-04), bump Test SDK (SEC-02), ADR Skia dans le Core (ARC-08)",
-      "Restes dev-senior : SEN-01 (fallback MapBaseToRevision), SEN-04 (état si échec de rendu post-ouverture), SEN-05 (purge rasters au Dispose), SEN-07 (documenter lecture concurrente Skia), SEN-08 (sérialiser drops rapides), SEN-11 (DPI d'export annoncé), SEN-13 (ambition thème light), SEN-14 (offset de région LayerRenderInfo)"
-    ]
+    "pour_roadmap": ["(transférés dans docs/ROADMAP.md — 13 items, priorité 1 = 3 demandes UAT utilisateur)"]
   },
   "artefacts": {
     "design_plan": "docs/DESIGN_PLAN.md",
@@ -62,6 +52,7 @@
     "2026-08-13 — DAEDALUS mode CRÉATION : DESIGN_PLAN.md (négatoscope sombre, accent ambre chantier, viseur de calage signature). ✅ CHECKPOINT 1 : plan validé par l'utilisateur (option loupe conservée). ✅ UX-DESIGN → GSD (mode dégradé consigné : tâches dans .zeus/tasks.md, DoD .zeus/DOD.md)",
     "2026-08-13 — GSD : 18 tâches done, DoD 100 % cochée. ✅ GATE TESTS : build 0 warning, 15/15 tests (dont workflow calage intégration sur vrais PDF). ✅ DESIGN-REVIEW n°1 : zéro bloquant, 2 mineurs → roadmap, loupe → UAT. Itérations design_review consommées : 0/3. ✅ → DEV-COUNCIL",
     "2026-08-13 — DEV-COUNCIL n°1 (7 auditeurs + sceptique + cross-challenge + arbitrage) : 1 Bloquant (FIA-01), 2 Majeurs, ~21 Mineurs. ✅ CHECKPOINT 2 : triage utilisateur = P1+P2 corrigés (itération dev_council 1/3), P3 → roadmap. Re-gate vert (28/28, analyzers stricts, warnings=erreurs), re-vérification ciblée : 5 fermés + FIAB-1 corrigé. Exe single-file 79 Mo v0.1.0. ✅ → DEV-SENIOR",
-    "2026-08-13 — DEV-SENIOR n°1 (5 points AUDIT_POINTS) : GO AVEC RÉSERVES — SEN-09 Majeur (luminance canal R) + SEN-10 corrigés immédiatement (itération 2/3), gate re-passé 29/29, publish 79,4 Mo. Restes → roadmap. ✅ → PUBLICATION (attente checkpoint 3)"
+    "2026-08-13 — DEV-SENIOR n°1 (5 points AUDIT_POINTS) : GO AVEC RÉSERVES — SEN-09 Majeur (luminance canal R) + SEN-10 corrigés immédiatement (itération 2/3), gate re-passé 29/29, publish 79,4 Mo. Restes → roadmap. ✅ → PUBLICATION (attente checkpoint 3)",
+    "2026-08-13 — ✅ CHECKPOINT 3 : GO publication — v0.1.0 taguée, CHANGELOG, exe 79,4 Mo + SHA-256, AUDIT_POINTS ratifiés. UAT utilisateur sur l'app réelle : 3 demandes (qualité raster, projets sauvegardés + récents, calage fin aux flèches clavier à pas réglable). ✅ CHECKPOINT 4 : roadmap validée avec ces ajouts → docs/ROADMAP.md (13 items, priorité 1 = demandes UAT). Cycle 1 clos, compteurs à zéro, état IDLE."
   ]
 }

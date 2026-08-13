@@ -6,12 +6,13 @@ namespace DrawingComparator.Tests;
 public class CompositorTests
 {
     /// <summary>Raster 2×2 noir sur blanc : (0,0) noir, le reste blanc.</summary>
-    private static SKBitmap MakeRaster()
+    private static SKImage MakeRaster()
     {
-        var bmp = new SKBitmap(new SKImageInfo(2, 2, SKColorType.Bgra8888, SKAlphaType.Premul));
+        using var bmp = new SKBitmap(new SKImageInfo(2, 2, SKColorType.Bgra8888, SKAlphaType.Premul));
         bmp.Erase(SKColors.White);
         bmp.SetPixel(0, 0, SKColors.Black);
-        return bmp;
+        bmp.SetImmutable();
+        return SKImage.FromBitmap(bmp);
     }
 
     [Fact]

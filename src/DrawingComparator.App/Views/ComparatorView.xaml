@@ -34,24 +34,21 @@
                 Padding="{StaticResource SpaceM}"
                 Visibility="{Binding IsAligning, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step1Glyph}">
-                        <TextBlock.Resources />
-                    </TextBlock>
+                <WrapPanel>
+                    <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step1Glyph}" />
                     <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step2Glyph}" />
                     <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step3Glyph}" />
                     <TextBlock Style="{StaticResource StepChip}" Text="{Binding Step4Glyph}" />
-                    <TextBlock Text="Échap pour annuler · Retour arrière pour re-poser"
-                               Foreground="{StaticResource BrushTextSecondary}"
-                               FontSize="{StaticResource FontSizeCaption}"
-                               VerticalAlignment="Center"
-                               Margin="8,0,0,0" />
-                </StackPanel>
+                </WrapPanel>
                 <TextBlock Text="{Binding StepInstruction}"
                            Foreground="{StaticResource BrushTextPrimary}"
                            FontSize="{StaticResource FontSizeBody}"
                            FontWeight="SemiBold"
                            Margin="0,8,0,0" />
+                <TextBlock Text="Échap pour annuler · Retour arrière pour re-poser le point précédent"
+                           Foreground="{StaticResource BrushTextSecondary}"
+                           FontSize="{StaticResource FontSizeCaption}"
+                           Margin="0,4,0,0" />
                 <TextBlock Text="{Binding AlignmentInlineError}"
                            Foreground="{StaticResource BrushDanger}"
                            FontSize="{StaticResource FontSizeCaption}"

@@ -19,12 +19,12 @@ public sealed partial class LayerViewModel : ObservableObject
     private readonly IPdfDocumentService _pdfService;
     private readonly Func<LayerViewModel, Exception, Task> _onError;
     private readonly Action _onRasterChanged;
-    private readonly Action<SKBitmap> _retireBitmap;
+    private readonly Action<SKImage> _retireBitmap;
     private CancellationTokenSource? _renderCts;
 
     public LayerViewModel(bool isBase, IPdfDocumentService pdfService,
         Func<LayerViewModel, Exception, Task> onError, Action onRasterChanged,
-        Action<SKBitmap> retireBitmap)
+        Action<SKImage> retireBitmap)
     {
         IsBase = isBase;
         _pdfService = pdfService;
@@ -65,8 +65,8 @@ public sealed partial class LayerViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
-    /// <summary>Raster courant (noir sur blanc) — propriété du calque, remplacé à chaque rendu.</summary>
-    public SKBitmap? Raster { get; private set; }
+    /// <summary>Raster courant (noir sur blanc), immuable, prêt pour l'échantillonnage mipmap.</summary>
+    public SKImage? Raster { get; private set; }
 
     /// <summary>Pixels du raster par point PDF.</summary>
     public float RasterScale { get; private set; }
@@ -132,10 +132,13 @@ public sealed partial class LayerViewModel : ObservableObject
                 bitmap.Dispose();
                 return;
             }
+            bitmap.SetImmutable();
+            var image = SKImage.FromBitmap(bitmap); // zéro copie sur bitmap immuable
+            bitmap.Dispose();
             var old = Raster;
-            Raster = bitmap;
+            Raster = image;
             // L'échelle réelle découle des pixels rendus, pas du DPI demandé (PDFtoImage arrondit).
-            RasterScale = bitmap.Width / size.Width;
+            RasterScale = image!.Width / size.Width;
             if (old is not null)
                 _retireBitmap(old);
             _onRasterChanged();

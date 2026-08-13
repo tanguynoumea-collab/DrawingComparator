@@ -1,0 +1,9 @@
+=== GATE TESTS 2026-08-13 ===
+--- dotnet build -c Release ---
+    0 Avertissement(s)
+    0 Erreur(s)
+
+Temps écoulé 00:00:03.84
+--- dotnet test -c Release ---
+
+Réussi!  - échec :     0, réussite :    12, ignorée(s) :     0, total :    12, durée : 62 ms - DrawingComparator.Tests.dll (net8.0)

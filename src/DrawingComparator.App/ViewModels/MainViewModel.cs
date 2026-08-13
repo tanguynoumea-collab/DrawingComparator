@@ -25,7 +25,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IExportService _exportService;
     private readonly IUserDialogs _dialogs;
 
-    private readonly List<SKBitmap> _retiredBitmaps = [];
+    private readonly List<SKImage> _retiredBitmaps = [];
     private bool _composeRunning;
     private bool _composeDirty;
 
@@ -130,7 +130,7 @@ public sealed partial class MainViewModel : ObservableObject
     // ── Barre de statut ───────────────────────────────────────────────────────
 
     [ObservableProperty]
-    private string _cursorPositionText = "";
+    private string _cursorPositionText = "x       —  y       — mm";
 
     [ObservableProperty]
     private string _zoomText = "zoom 100 %";
@@ -169,6 +169,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void UpdatePagesText()
     {
+        // Les setters des initialiseurs de calques notifient avant la fin du constructeur.
+        if (BaseLayer is null || RevisionLayer is null)
+            return;
         static string Part(LayerViewModel l) =>
             l.DocumentInfo is { } d ? $"{l.SelectedPage}/{d.PageCount}" : "—";
         PagesText = $"page {Part(BaseLayer)} ↔ {Part(RevisionLayer)}";
@@ -486,7 +489,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Différer la libération d'un raster remplacé jusqu'à la fin de la composition en vol.</summary>
-    public void RetireBitmap(SKBitmap bitmap)
+    public void RetireBitmap(SKImage bitmap)
     {
         if (_composeRunning)
             _retiredBitmaps.Add(bitmap);

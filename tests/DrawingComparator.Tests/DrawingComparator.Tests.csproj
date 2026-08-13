@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- net8.0-windows + UseWPF : la suite couvre aussi les ViewModels de l'App (machine à états de calage). -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
@@ -22,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DrawingComparator.Core\DrawingComparator.Core.csproj" />
+    <ProjectReference Include="..\..\src\DrawingComparator.App\DrawingComparator.App.csproj" />
   </ItemGroup>
 
 </Project>

@@ -14,7 +14,7 @@ public enum LayerTint { Red, Blue }
 /// Sous blending multiplicatif, elle s'applique en interpolation vers le blanc, jamais en alpha.
 /// </param>
 public sealed record LayerRenderInfo(
-    SKBitmap Bitmap,
+    SKImage Image,
     float RasterScale,
     SKMatrix DocToBase,
     LayerTint Tint,
@@ -41,7 +41,11 @@ public sealed class ComparisonCompositor : IComparisonCompositor
 {
     // CatmullRom : cubique interpolante (B=0) — restitue exactement le raster à l'échelle 1:1,
     // là où Mitchell (B=1/3) floute même sans transformation.
-    private static readonly SKSamplingOptions Sampling = new(SKCubicResampler.CatmullRom);
+    private static readonly SKSamplingOptions Magnify = new(SKCubicResampler.CatmullRom);
+
+    // En minification forte (vue d'ensemble d'un raster 300 DPI), un filtre cubique
+    // sous-échantillonne et fait décrocher les traits fins : il faut des mipmaps.
+    private static readonly SKSamplingOptions Minify = new(SKFilterMode.Linear, SKMipmapMode.Linear);
 
     public void Compose(SKCanvas canvas, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers)
     {
@@ -62,9 +66,12 @@ public sealed class ComparisonCompositor : IComparisonCompositor
             paint.ColorFilter = CreateTintFilter(layer.Tint, layer.Strength);
             paint.BlendMode = SKBlendMode.Multiply;
 
+            double scale = Math.Sqrt(Math.Abs(total.ScaleX * (double)total.ScaleY - total.SkewX * (double)total.SkewY));
+            var sampling = scale < 0.95 ? Minify : Magnify;
+
             canvas.Save();
             canvas.Concat(in total);
-            canvas.DrawBitmap(layer.Bitmap, 0, 0, Sampling, paint);
+            canvas.DrawImage(layer.Image, 0, 0, sampling, paint);
             canvas.Restore();
         }
     }

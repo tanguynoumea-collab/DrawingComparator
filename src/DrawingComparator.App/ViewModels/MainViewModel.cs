@@ -20,7 +20,7 @@ public enum AlignmentStep
     Point2OnBase,
 }
 
-public sealed partial class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private const float FitMarginPx = 24f;
 
@@ -541,5 +541,12 @@ public sealed partial class MainViewModel : ObservableObject
             _retiredBitmaps.Add(bitmap);
         else
             bitmap.Dispose();
+    }
+
+    /// <summary>Appelé par le conteneur DI à la fermeture (singleton IDisposable).</summary>
+    public void Dispose()
+    {
+        BaseLayer.Dispose();
+        RevisionLayer.Dispose();
     }
 }

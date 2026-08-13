@@ -90,8 +90,9 @@ public sealed partial class LayerViewModel : ObservableObject, IDisposable
             PageNumbers = Enumerable.Range(1, info.PageCount).ToList();
             SelectedPage = 1;
             // L'ancien document est libéré une fois le nouveau ouvert (jamais avant :
-            // en cas d'échec d'ouverture, le calque garde son contenu).
-            if (previousPath is not null && previousPath != path)
+            // en cas d'échec d'ouverture, le calque garde son contenu). Y compris pour
+            // le MÊME chemin : OpenAsync vient de prendre une référence de plus (FIAB-1).
+            if (previousPath is not null)
                 _pdfService.Release(previousPath);
             await RenderCurrentPageAsync();
         }

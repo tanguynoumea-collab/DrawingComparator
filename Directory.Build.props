@@ -8,6 +8,10 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- PKG2-02 : le RID est déclaré au restore pour TOUT le monde (dev, CI, publish),
+         sinon le publish win-x64 régénère des lock files que le restore CI sans RID
+         rejette en mode verrouillé (NU1004, constaté au premier run). -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <!-- Symboles embarqués dans les assemblies : exploitables dans les crash logs, aucun .pdb à livrer (PKG-04). -->
     <DebugType>embedded</DebugType>
   </PropertyGroup>

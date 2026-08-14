@@ -18,6 +18,7 @@
             <local:TintToBrushConverter x:Key="TintToBrush" />
             <local:InverseBoolConverter x:Key="InverseBool" />
             <local:DoubleEqualsConverter x:Key="DoubleEquals" />
+            <local:EnumEqualsConverter x:Key="EnumEquals" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

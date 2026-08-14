@@ -19,7 +19,8 @@ public class RecomposeLifecycleTests
         public int ComposeCalls;
         public SemaphoreSlim? Gate;
 
-        public SKBitmap ComposeToBitmap(SKSizeI size, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers)
+        public SKBitmap ComposeToBitmap(SKSizeI size, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers,
+            CompareViewMode mode = CompareViewMode.Overlay)
         {
             Interlocked.Increment(ref ComposeCalls);
             Gate?.Wait();
@@ -136,7 +137,8 @@ public class RecomposeLifecycleTests
     private sealed class ThrowingCompositor : IComparisonCompositor
     {
         public int Calls;
-        public SKBitmap ComposeToBitmap(SKSizeI size, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers)
+        public SKBitmap ComposeToBitmap(SKSizeI size, SKMatrix baseToView, IReadOnlyList<LayerRenderInfo> layers,
+            CompareViewMode mode = CompareViewMode.Overlay)
         {
             Calls++;
             throw new InvalidOperationException("boum");

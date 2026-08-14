@@ -356,7 +356,15 @@ chrome seul — le canvas est déjà light par construction (multiply sur fond b
 - **Pas d'ajustement** : 3 pas, plus fins — 0,01 / 0,1 / 1 mm (défaut 0,1 ; Maj = 0,01, Ctrl = 1).
 - **Export** : format PNG **ou PDF** (une page à l'emprise de la feuille, rasters embarqués,
   tuilé au fil de l'eau — 600 DPI possible même sur A0) + résolution 600 DPI ajoutée
-  (« impression fine ») ; la « vue courante » reste réservée au PNG.
+  (« impression fine ») ; la « vue courante » reste réservée au PNG. Bouton barre d'outils
+  renommé « Exporter ».
+- **Calque des différences** (section AFFICHAGE du panneau) : 4 modes — Superposition /
+  Différences seules / Différences sur BASE / Différences sur RÉVISÉ. Les traits communs
+  (sombres sous multiply) s'effacent par filtre SKSL au compositeur ; en mode « sur … »,
+  le plan choisi sert de fond gris de contexte. S'applique aussi aux exports.
+- **Logo** : icône générée depuis l'identité (fond négatoscope #16181D, carrés rouge/bleu
+  superposés, intersection multiply sombre, point ambre) — exe (app.ico 16/32/48/256) +
+  icône de fenêtre.
 
 ### 11.12 Journal des choix rejetés (delta)
 

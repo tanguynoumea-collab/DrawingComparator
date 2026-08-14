@@ -6,7 +6,15 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- Logo de l'app (UAT cycle 2) : Assets/app.ico généré depuis l'identité visuelle
+         (négatoscope sombre, carrés rouge/bleu, intersection multiply, point ambre). -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\logo-256.png" />
+  </ItemGroup>
 
   <!-- Options de publish figées ici (source unique, cf. scripts/publish.ps1) :
        un seul exe réellement copiable — natives extraites au premier lancement,

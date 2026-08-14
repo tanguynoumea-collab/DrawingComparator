@@ -70,7 +70,7 @@ public class ExportServiceTests
         {
             // 400×2000 pt à 144 DPI → 800×4000 px ; bande = 16 Mpx / 800 ≥ 4000 → au moins 1 bande.
             float dpi = await service.ExportSheetPngAsync(path, new SKSize(400, 2000), 144, layers,
-                new SynchronousProgress(reports));
+                progress: new SynchronousProgress(reports));
 
             Assert.Equal(144f, dpi, 0.5f);
             using var decoded = SKBitmap.Decode(path);
@@ -213,7 +213,7 @@ public class ExportServiceTests
         try
         {
             float dpi = await service.ExportSheetPdfAsync(path, fake.PageSize, 600, layers,
-                new SynchronousProgress(reports));
+                progress: new SynchronousProgress(reports));
 
             Assert.Equal(600f, dpi, 0.5f);
             byte[] header = File.ReadAllBytes(path)[..5];

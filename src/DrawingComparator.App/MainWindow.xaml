@@ -9,6 +9,7 @@
                  mc:Ignorable="d"
                  d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
                  Title="DrawingComparator"
+                 Icon="pack://application:,,,/Assets/app.ico"
                  Width="1280"
                  Height="800"
                  MinWidth="1000"
@@ -162,8 +163,8 @@
                         ToolTip="Permuter les teintes rouge/bleu" />
                 <Button Style="{StaticResource ToolbarButton}"
                         Command="{Binding ExportCommand}"
-                        Content="Exporter PNG"
-                        ToolTip="Exporter le comparatif en PNG (Ctrl+E)" />
+                        Content="Exporter"
+                        ToolTip="Exporter le comparatif en PNG ou PDF (Ctrl+E)" />
             </StackPanel>
         </Border>
 
@@ -492,6 +493,37 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Mode d'affichage (UAT cycle 2) : le calque des différences -->
+                    <TextBlock Text="AFFICHAGE" Style="{StaticResource PanelTitle}" Margin="0,8,0,8" />
+                    <Border Style="{StaticResource LayerCard}">
+                        <StackPanel>
+                            <RadioButton Content="Superposition"
+                                         GroupName="ViewMode"
+                                         IsChecked="{Binding CompareMode, Converter={StaticResource EnumEquals}, ConverterParameter=Overlay}"
+                                         Foreground="{StaticResource BrushTextPrimary}" />
+                            <RadioButton Content="Différences seules"
+                                         GroupName="ViewMode"
+                                         IsChecked="{Binding CompareMode, Converter={StaticResource EnumEquals}, ConverterParameter=DifferencesOnly}"
+                                         Margin="0,6,0,0"
+                                         Foreground="{StaticResource BrushTextPrimary}" />
+                            <RadioButton Content="Différences sur BASE"
+                                         GroupName="ViewMode"
+                                         IsChecked="{Binding CompareMode, Converter={StaticResource EnumEquals}, ConverterParameter=DifferencesOverBase}"
+                                         Margin="0,6,0,0"
+                                         Foreground="{StaticResource BrushTextPrimary}" />
+                            <RadioButton Content="Différences sur RÉVISÉ"
+                                         GroupName="ViewMode"
+                                         IsChecked="{Binding CompareMode, Converter={StaticResource EnumEquals}, ConverterParameter=DifferencesOverRevision}"
+                                         Margin="0,6,0,0"
+                                         Foreground="{StaticResource BrushTextPrimary}" />
+                            <TextBlock Text="Les traits communs s'effacent — ne restent que les écarts rouges et bleus. Binariser les calques affine le résultat."
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       FontSize="{StaticResource FontSizeCaption}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Text="CALAGE" Style="{StaticResource PanelTitle}" Margin="0,8,0,8" />
                     <Border Style="{StaticResource LayerCard}">
                         <StackPanel>
@@ -528,8 +560,10 @@
                             <StackPanel Margin="0,12,0,0"
                                         Visibility="{Binding HasAlignment, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Text="AJUSTER (FLÈCHES)" Style="{StaticResource PanelTitle}" />
-                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                    <TextBlock Text="pas"
+                                <!-- WrapPanel : dans les 288 px du panneau, un StackPanel horizontal
+                                     ROGNAIT le 3e pas (retour UAT) — ici tout reste visible. -->
+                                <WrapPanel Margin="0,6,0,0">
+                                    <TextBlock Text="pas (mm)"
                                                Foreground="{StaticResource BrushTextSecondary}"
                                                FontSize="{StaticResource FontSizeCaption}"
                                                VerticalAlignment="Center"
@@ -541,19 +575,14 @@
                                     <RadioButton Content="0,1"
                                                  GroupName="NudgeStep"
                                                  IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.1}"
-                                                 Margin="8,0,0,0"
+                                                 Margin="4,0,0,0"
                                                  Foreground="{StaticResource BrushTextPrimary}" />
                                     <RadioButton Content="1"
                                                  GroupName="NudgeStep"
                                                  IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=1}"
-                                                 Margin="8,0,0,0"
+                                                 Margin="4,0,0,0"
                                                  Foreground="{StaticResource BrushTextPrimary}" />
-                                    <TextBlock Text="mm"
-                                               Foreground="{StaticResource BrushTextSecondary}"
-                                               FontSize="{StaticResource FontSizeCaption}"
-                                               VerticalAlignment="Center"
-                                               Margin="8,0,0,0" />
-                                </StackPanel>
+                                </WrapPanel>
                                 <TextBlock Text="Maj = pas fin · Ctrl = pas large · cliquez le plan d'abord"
                                            Foreground="{StaticResource BrushTextSecondary}"
                                            FontSize="{StaticResource FontSizeCaption}"

@@ -50,6 +50,19 @@ public sealed class InverseBoolConverter : IValueConverter
 }
 
 /// <summary>
+/// Égalité entre un enum lié et son nom en paramètre XAML (radios du mode d'affichage) :
+/// coché ⇔ valeur = paramètre ; cocher pousse la valeur parsée dans la propriété.
+/// </summary>
+public sealed class EnumEqualsConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value?.ToString() == (string)parameter!;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? Enum.Parse(targetType, (string)parameter!) : Binding.DoNothing;
+}
+
+/// <summary>
 /// Égalité entre un double lié et le paramètre du XAML (segmented du pas d'ajustement) :
 /// coché ⇔ valeur = paramètre ; cocher pousse le paramètre dans la propriété.
 /// </summary>

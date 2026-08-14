@@ -25,7 +25,8 @@ public interface IExportService
     /// émise par tuile (0..1) ; l'annulation abandonne le fichier.
     /// </summary>
     Task<float> ExportSheetPngAsync(string outputPath, SKSize baseSizePoints, float dpi,
-        IReadOnlyList<ExportLayer> layers, IProgress<double>? progress = null, CancellationToken ct = default);
+        IReadOnlyList<ExportLayer> layers, CompareViewMode mode = CompareViewMode.Overlay,
+        IProgress<double>? progress = null, CancellationToken ct = default);
 
     /// <summary>
     /// Exporte le comparatif en PDF une page à l'emprise du plan de base (points PDF),
@@ -33,11 +34,13 @@ public interface IExportService
     /// pleine feuille, donc AUCUN plafond de surface — 600 DPI sur un A0 passe (UAT cycle 2).
     /// </summary>
     Task<float> ExportSheetPdfAsync(string outputPath, SKSize baseSizePoints, float dpi,
-        IReadOnlyList<ExportLayer> layers, IProgress<double>? progress = null, CancellationToken ct = default);
+        IReadOnlyList<ExportLayer> layers, CompareViewMode mode = CompareViewMode.Overlay,
+        IProgress<double>? progress = null, CancellationToken ct = default);
 
     /// <summary>Exporte une vue arbitraire (viewport écran, WYSIWYG) depuis les rasters fournis.</summary>
     Task ExportViewPngAsync(string outputPath, SKSizeI sizePixels, SKMatrix baseToView,
-        IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct = default);
+        IReadOnlyList<LayerRenderInfo> layers, CompareViewMode mode = CompareViewMode.Overlay,
+        CancellationToken ct = default);
 }
 
 public sealed class ExportService(IComparisonCompositor compositor, IPdfDocumentService pdfService) : IExportService
@@ -91,7 +94,8 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
     }
 
     public async Task<float> ExportSheetPngAsync(string outputPath, SKSize baseSizePoints, float dpi,
-        IReadOnlyList<ExportLayer> layers, IProgress<double>? progress = null, CancellationToken ct = default)
+        IReadOnlyList<ExportLayer> layers, CompareViewMode mode = CompareViewMode.Overlay,
+        IProgress<double>? progress = null, CancellationToken ct = default)
     {
         var (scale, effectiveDpi) = ComputeExportScale(baseSizePoints, dpi);
         var size = SheetSizePx(baseSizePoints, scale);
@@ -100,7 +104,7 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
         using var sheet = new SKBitmap(new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Premul));
         using (var sheetCanvas = new SKCanvas(sheet))
         {
-            await RenderTilesAsync(baseSizePoints, scale, effectiveDpi, layers, progress,
+            await RenderTilesAsync(baseSizePoints, scale, effectiveDpi, layers, mode, progress,
                 (tileBitmap, rect) =>
                     // Blit 1:1 : aucun ré-échantillonnage, la tuile tombe pile sur ses pixels.
                     sheetCanvas.DrawBitmap(tileBitmap, new SKPoint(rect.Left, rect.Top),
@@ -113,7 +117,8 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
     }
 
     public async Task<float> ExportSheetPdfAsync(string outputPath, SKSize baseSizePoints, float dpi,
-        IReadOnlyList<ExportLayer> layers, IProgress<double>? progress = null, CancellationToken ct = default)
+        IReadOnlyList<ExportLayer> layers, CompareViewMode mode = CompareViewMode.Overlay,
+        IProgress<double>? progress = null, CancellationToken ct = default)
     {
         // Pas de bitmap pleine feuille : chaque tuile est écrite dans le flux PDF puis libérée —
         // le DPI demandé est TOUJOURS honoré, aucun plafond de surface (UAT cycle 2, 600 DPI).
@@ -125,7 +130,7 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
             using var document = SKDocument.CreatePdf(stream);
             var pageCanvas = document.BeginPage(baseSizePoints.Width, baseSizePoints.Height);
 
-            await RenderTilesAsync(baseSizePoints, scale, dpi, layers, progress,
+            await RenderTilesAsync(baseSizePoints, scale, dpi, layers, mode, progress,
                 (tileBitmap, rect) =>
                     // Le canvas PDF travaille en points : la tuile (pixels) est posée sur son
                     // emprise en points — le raster embarqué garde sa pleine résolution.
@@ -156,7 +161,7 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
     /// composée est remise à <paramref name="drawTile"/> avec son emprise en pixels feuille.
     /// </summary>
     private async Task RenderTilesAsync(SKSize baseSizePoints, float scale, float effectiveDpi,
-        IReadOnlyList<ExportLayer> layers, IProgress<double>? progress,
+        IReadOnlyList<ExportLayer> layers, CompareViewMode mode, IProgress<double>? progress,
         Action<SKBitmap, SKRectI> drawTile, CancellationToken ct)
     {
         var size = SheetSizePx(baseSizePoints, scale);
@@ -216,7 +221,7 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
 
                 ct.ThrowIfCancellationRequested();
                 var tileView = SKMatrix.CreateTranslation(-x0, -y0).PreConcat(SKMatrix.CreateScale(scale, scale));
-                using var tileBitmap = compositor.ComposeToBitmap(new SKSizeI(tileW, tileH), tileView, infos);
+                using var tileBitmap = compositor.ComposeToBitmap(new SKSizeI(tileW, tileH), tileView, infos, mode);
                 drawTile(tileBitmap, new SKRectI(x0, y0, x0 + tileW, y0 + tileH));
             }
             finally
@@ -242,7 +247,8 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
     }
 
     public Task ExportViewPngAsync(string outputPath, SKSizeI sizePixels, SKMatrix baseToView,
-        IReadOnlyList<LayerRenderInfo> layers, CancellationToken ct = default)
+        IReadOnlyList<LayerRenderInfo> layers, CompareViewMode mode = CompareViewMode.Overlay,
+        CancellationToken ct = default)
         => Task.Run(() =>
         {
             // Même garde-fou mémoire que la feuille entière (dev-senior SEN-02).
@@ -256,7 +262,7 @@ public sealed class ExportService(IComparisonCompositor compositor, IPdfDocument
                 baseToView = SKMatrix.CreateScale(f, f).PreConcat(baseToView);
             }
             ct.ThrowIfCancellationRequested();
-            using var bitmap = compositor.ComposeToBitmap(sizePixels, baseToView, layers);
+            using var bitmap = compositor.ComposeToBitmap(sizePixels, baseToView, layers, mode);
             ct.ThrowIfCancellationRequested();
             SavePng(outputPath, bitmap);
         }, ct);

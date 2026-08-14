@@ -180,6 +180,71 @@ public class CompositorTests
         Assert.True(below.Green > 240, $"attendu blanc sous la tuile, obtenu {below}");
     }
 
+    // ── Mode Différences (UAT cycle 2) ───────────────────────────────────────
+
+    [Fact]
+    public void DifferencesOnly_ErasesCommonStrokes_KeepsUniqueOnes()
+    {
+        using var raster1 = MakeRaster(); // trait noir en (0,0)
+        using var raster2 = MakeRaster();
+        var compositor = new ComparisonCompositor();
+
+        // Le second calque est décalé d'un pixel : (0,0) = commun ? Non — raster2 translaté
+        // met SON trait en (1,0) : (0,0) = rouge seul, (1,0) = bleu seul. Superposons-les
+        // exactement pour avoir un commun : troisième config sans décalage.
+        var overlapping = new List<LayerRenderInfo>
+        {
+            new(raster1, 1f, SKMatrix.Identity, LayerTint.Red, 1f),
+            new(raster2, 1f, SKMatrix.Identity, LayerTint.Blue, 1f),
+        };
+        using var diffCommon = compositor.ComposeToBitmap(new SKSizeI(2, 2), SKMatrix.Identity,
+            overlapping, CompareViewMode.DifferencesOnly);
+        var common = diffCommon.GetPixel(0, 0);
+        Assert.True(common.Red > 240 && common.Green > 240 && common.Blue > 240,
+            $"trait commun attendu EFFACÉ (blanc), obtenu {common}");
+
+        var offset = new List<LayerRenderInfo>
+        {
+            new(raster1, 1f, SKMatrix.Identity, LayerTint.Red, 1f),
+            new(raster2, 1f, SKMatrix.CreateTranslation(1, 0), LayerTint.Blue, 1f),
+        };
+        using var diffUnique = compositor.ComposeToBitmap(new SKSizeI(3, 2), SKMatrix.Identity,
+            offset, CompareViewMode.DifferencesOnly);
+        var red = diffUnique.GetPixel(0, 0);
+        Assert.True(red.Red > 240 && red.Green < 15, $"écart rouge attendu conservé, obtenu {red}");
+        var blue = diffUnique.GetPixel(1, 0);
+        Assert.True(blue.Blue > 240 && blue.Red < 15, $"écart bleu attendu conservé, obtenu {blue}");
+    }
+
+    [Fact]
+    public void DifferencesOverBase_ShowsBaseAsGrayContext_DifferencesInColour()
+    {
+        using var raster1 = MakeRaster(); // base : trait en (0,0)
+        using var raster2 = MakeRaster(); // révisé décalé : trait en (1,0)
+        var compositor = new ComparisonCompositor();
+
+        var layers = new List<LayerRenderInfo>
+        {
+            new(raster1, 1f, SKMatrix.Identity, LayerTint.Red, 1f),
+            new(raster2, 1f, SKMatrix.CreateTranslation(1, 0), LayerTint.Blue, 1f),
+        };
+        using var result = compositor.ComposeToBitmap(new SKSizeI(3, 2), SKMatrix.Identity,
+            layers, CompareViewMode.DifferencesOverBase);
+
+        // (0,0) : trait de la BASE — écart rouge posé sur son propre gris de contexte :
+        // le canal rouge domine nettement (le pixel n'est ni blanc ni gris neutre).
+        var baseStroke = result.GetPixel(0, 0);
+        Assert.True(baseStroke.Red > baseStroke.Green + 60,
+            $"écart rouge attendu dominant sur le contexte, obtenu {baseStroke}");
+        // (1,0) : trait du RÉVISÉ seul → bleu conservé (multiply sur fond blanc du contexte).
+        var revStroke = result.GetPixel(1, 0);
+        Assert.True(revStroke.Blue > 200 && revStroke.Red < 100,
+            $"écart bleu attendu, obtenu {revStroke}");
+        // (2,1) : rien nulle part → blanc.
+        var empty = result.GetPixel(2, 1);
+        Assert.True(empty.Red > 240 && empty.Green > 240, $"fond attendu blanc, obtenu {empty}");
+    }
+
     [Fact]
     public void Binarize_CleansGreyScanBackground_KeepsStrokes()
     {

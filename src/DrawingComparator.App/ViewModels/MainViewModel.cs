@@ -198,6 +198,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isHomeView = true;
 
+    /// <summary>
+    /// Mode d'affichage (UAT cycle 2, « calque des différences ») : superposition classique,
+    /// écarts seuls, ou écarts posés sur l'un des deux plans en gris de contexte.
+    /// </summary>
+    [ObservableProperty]
+    private CompareViewMode _compareMode = CompareViewMode.Overlay;
+
+    partial void OnCompareModeChanged(CompareViewMode value) => RequestRecompose();
+
     // ── Snackbar (item 5) ─────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -427,7 +436,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 {
                     var size = new SKSizeI(ViewportSize.Width * 2, ViewportSize.Height * 2);
                     var view = SKMatrix.CreateScale(2f, 2f).PreConcat(ViewMatrix);
-                    await _exportService.ExportViewPngAsync(request.OutputPath, size, view, layers);
+                    await _exportService.ExportViewPngAsync(request.OutputPath, size, view, layers, CompareMode);
                 }
                 finally
                 {
@@ -447,9 +456,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 {
                     effectiveDpi = pdf
                         ? await _exportService.ExportSheetPdfAsync(
-                            request.OutputPath, sheetSize, request.Dpi, exportLayers, progress, ct)
+                            request.OutputPath, sheetSize, request.Dpi, exportLayers, CompareMode, progress, ct)
                         : await _exportService.ExportSheetPngAsync(
-                            request.OutputPath, sheetSize, request.Dpi, exportLayers, progress, ct);
+                            request.OutputPath, sheetSize, request.Dpi, exportLayers, CompareMode, progress, ct);
                 });
                 if (completed)
                     ShowSnackbar(
@@ -699,12 +708,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 var layers = BuildRenderLayers();
                 var view = ViewMatrix;
                 var size = ViewportSize;
+                var mode = CompareMode;
 
                 BeginBackgroundCompose();
                 SKBitmap bitmap;
                 try
                 {
-                    bitmap = await Task.Run(() => _compositor.ComposeToBitmap(size, view, layers));
+                    bitmap = await Task.Run(() => _compositor.ComposeToBitmap(size, view, layers, mode));
                 }
                 finally
                 {
@@ -819,7 +829,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             .PreConcat(SKMatrix.CreateScale(magnification, magnification))
             .PreConcat(SKMatrix.CreateTranslation(-screenPoint.X, -screenPoint.Y))
             .PreConcat(ViewMatrix);
-        return _compositor.ComposeToBitmap(new SKSizeI(sizePx, sizePx), m, BuildRenderLayers());
+        return _compositor.ComposeToBitmap(new SKSizeI(sizePx, sizePx), m, BuildRenderLayers(), CompareMode);
     }
 
     // ── Cycle de vie des rasters (FIA-01) ─────────────────────────────────────

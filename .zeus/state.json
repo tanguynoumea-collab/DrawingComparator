@@ -1,7 +1,7 @@
 {
   "$schema_note": "État du pipeline ZEUS — commité avec le projet. Mis à jour à chaque transition de phase.",
   "projet": "DrawingComparator",
-  "version_courante": "0.1.0",
+  "version_courante": "0.2.0",
   "route": "full",
   "phase": "PUBLICATION",
   "phase_status": "attente_checkpoint_3_go_publication",
@@ -36,7 +36,7 @@
   "checkpoints": {
     "plan_design_valide": true,
     "triage_findings": true,
-    "go_publication": false,
+    "go_publication": true,
     "confirmation_roadmap": false
   },
   "pending": {
@@ -76,6 +76,8 @@
     "2026-08-13 — DEV-COUNCIL n°2 (8 auditeurs + sceptique + cross-challenge 4 paires + arbitrage 3 juges) : 1 Bloquant (DON2-01 écriture .dcproj non atomique), 3 Majeurs (SEC2-01 UNC, TST2-01 SaveProject non testé, ARC2-01 extraction AlignmentSession arbitrée unanime), ~18 Mineurs, ~20 Infos, 1 invalidé, 9 sévérités abaissées. Fix unique identifié : IProjectStore atomique+validé. Rapport .zeus/reports/dev-council-2.md. ⏸ ATTENTE CHECKPOINT 2 : triage utilisateur",
     "2026-08-13 — ✅ CHECKPOINT 2 : triage utilisateur = « corrige P1 + extraction » (IProjectStore atomique+validé, politique UNC, FIA2-04/02, version 0.2.0+garde CI, extraction AlignmentSession). Itération dev_council 1/3. P2/P3 → roadmap. → GSD (boucle corrections)",
     "2026-08-13 — Corrections P1 + extraction livrées (commit d9b2e82) : re-gate 75/75 + format OK, re-vérification ciblée 7/7 FERMÉS (DON2-01, DON2-02+SEC2-02, SEC2-01, TST2-01, ARC2-01 → AlignmentSession 399 l. / MainViewModel 862 l., FIA2-04+02, PKG2-01+SEC2-06). AUDIT_POINTS rafraîchi (PERT2-06). ✅ DEV-COUNCIL clos → DEV-SENIOR",
-    "2026-08-13 — DEV-SENIOR n°2 : GO AVEC RÉSERVES — 4 Majeurs manqués par le council (SEN2-01 export A0 à 247 DPI réels, SEN2-02 .dcproj sans FilePath crash hors frontière, SEN2-03 Échap détruit le calage committé pendant la pose du contrôle, SEN2-04 DPI du révisé sans compensation d'échelle) corrigés immédiatement (itération 2/3) + SEN2-06 partiel. Re-gate 81/81, format OK. Verdict final GO. Rapport .zeus/reports/dev-senior-2.md. ⏸ ATTENTE CHECKPOINT 3 : go/no-go publication v0.2.0"
+    "2026-08-13 — DEV-SENIOR n°2 : GO AVEC RÉSERVES — 4 Majeurs manqués par le council (SEN2-01 export A0 à 247 DPI réels, SEN2-02 .dcproj sans FilePath crash hors frontière, SEN2-03 Échap détruit le calage committé pendant la pose du contrôle, SEN2-04 DPI du révisé sans compensation d'échelle) corrigés immédiatement (itération 2/3) + SEN2-06 partiel. Re-gate 81/81, format OK. Verdict final GO. Rapport .zeus/reports/dev-senior-2.md. ⏸ ATTENTE CHECKPOINT 3 : go/no-go publication v0.2.0",
+    "2026-08-13 — UAT utilisateur sur l'app réelle (checklist exhaustive) : 3 vagues de retouches intégrées et re-gatées — pas 0,05 puis 3 pas 0,01/0,1/1 mm (rognage WrapPanel corrigé), export PDF 600 DPI tuilé + option 600 DPI + bouton « Exporter », onglets Accueil/Projet (correctif viewport replié), calque des différences (4 modes AFFICHAGE, filtre SKSL), logo/icône générés. 87/87 tests.",
+    "2026-08-13 — ✅ CHECKPOINT 3 : GO publication (« RAS, GO »). CHANGELOG 0.2.0, re-gate 87/87, publish local 79,4 Mo + SHA-256 1374FA4E…. Tag v0.2.0 poussé → CI (garde tag↔version, rebuild, Release automatique avec zip)."
   ]
 }

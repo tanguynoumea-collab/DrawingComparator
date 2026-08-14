@@ -62,7 +62,7 @@ public partial class ComparatorView : UserControl
         }
 
         double? overrideStep =
-            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 0.1 :
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 0.05 :
             Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ? 2.0 : null;
         _vm.NudgeRevision(dx, dy, overrideStep);
         e.Handled = true;

@@ -488,9 +488,14 @@
                                                FontSize="{StaticResource FontSizeCaption}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,8,0" />
+                                    <RadioButton Content="0,05"
+                                                 GroupName="NudgeStep"
+                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.05}"
+                                                 Foreground="{StaticResource BrushTextPrimary}" />
                                     <RadioButton Content="0,1"
                                                  GroupName="NudgeStep"
                                                  IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.1}"
+                                                 Margin="8,0,0,0"
                                                  Foreground="{StaticResource BrushTextPrimary}" />
                                     <RadioButton Content="0,5"
                                                  GroupName="NudgeStep"

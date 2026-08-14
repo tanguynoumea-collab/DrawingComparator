@@ -236,8 +236,8 @@ pose de points), le **panneau Calage** devient l'instrument de retouche :
 │ ✓ calé   résiduel 0,4 mm  │  ← résiduel : § 11.4
 │ é=0.998  θ=+0.4°          │
 │ AJUSTER (flèches)         │
-│ pas  [0,1] [0,5] [2] mm   │  ← segmented, valeur active en ambre
-│ Maj = pas ↓   Ctrl = pas ↑ │  ← Caption
+│ pas [0,05][0,1][0,5][2] mm│  ← segmented, valeur active en ambre (0,05 ajouté en UAT cycle 2)
+│ Maj = pas ↓   Ctrl = pas ↑ │  ← Caption (Maj = 0,05)
 │ [Réinitialiser]           │
 ```
 

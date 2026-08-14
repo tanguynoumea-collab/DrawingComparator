@@ -62,8 +62,8 @@ public partial class ComparatorView : UserControl
         }
 
         double? overrideStep =
-            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 0.05 :
-            Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ? 2.0 : null;
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 0.01 :
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ? 1.0 : null;
         _vm.NudgeRevision(dx, dy, overrideStep);
         e.Handled = true;
     }
@@ -104,9 +104,15 @@ public partial class ComparatorView : UserControl
     private void OnSizeChanged(object sender, SizeChangedEventArgs e) => PushViewportSize();
 
     private void PushViewportSize()
-        => _vm?.SetViewportSize(new SKSizeI(
-            Math.Max(1, (int)Math.Round(ActualWidth * _dpiScale)),
-            Math.Max(1, (int)Math.Round(ActualHeight * _dpiScale))));
+    {
+        // La vue peut être repliée par l'onglet Accueil (Visibility) : un viewport 1×1
+        // fausserait le fit initial (zoom négatif) — on attend une taille réelle.
+        if (ActualWidth < 1 || ActualHeight < 1)
+            return;
+        _vm?.SetViewportSize(new SKSizeI(
+            (int)Math.Round(ActualWidth * _dpiScale),
+            (int)Math.Round(ActualHeight * _dpiScale)));
+    }
 
     /// <summary>Position souris (DIPs) → pixels physiques du viewport.</summary>
     private SKPoint DevicePoint(Point p)

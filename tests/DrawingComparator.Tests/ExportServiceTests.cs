@@ -202,6 +202,53 @@ public class ExportServiceTests
     }
 
     [Fact]
+    public async Task ExportSheetPdf_WritesOnePagePdf_At600Dpi_ReportsProgress()
+    {
+        // UAT cycle 2 : le PDF s'écrit tuile par tuile — 600 DPI honoré même sans plafond de feuille.
+        var fake = new FakePdfDocumentService { PageSize = new SKSize(595, 842) };
+        var service = MakeService(fake);
+        var layers = new List<ExportLayer> { new("base.pdf", 0, fake.PageSize, SKMatrix.Identity, LayerTint.Red, 1f) };
+        string path = Path.Combine(Path.GetTempPath(), $"dc-test-{Guid.NewGuid():N}.pdf");
+        var reports = new List<double>();
+        try
+        {
+            float dpi = await service.ExportSheetPdfAsync(path, fake.PageSize, 600, layers,
+                new SynchronousProgress(reports));
+
+            Assert.Equal(600f, dpi, 0.5f);
+            byte[] header = File.ReadAllBytes(path)[..5];
+            Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(header));
+            Assert.NotEmpty(reports);
+            Assert.Equal(1.0, reports[^1], 3);
+            lock (fake.RegionRequests)
+            {
+                Assert.All(fake.RegionRequests, r => Assert.Equal(600f, r.Dpi, 0.5f));
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ExportSheetPdf_Cancelled_LeavesNoPartialFile()
+    {
+        var service = MakeService();
+        var layers = new List<ExportLayer>
+        {
+            new("base.pdf", 0, new SKSize(100, 50), SKMatrix.Identity, LayerTint.Red, 1f),
+        };
+        string path = Path.Combine(Path.GetTempPath(), $"dc-test-{Guid.NewGuid():N}.pdf");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => service.ExportSheetPdfAsync(path, new SKSize(100, 50), 300, layers, ct: cts.Token));
+        Assert.False(File.Exists(path), "un PDF partiel ne doit jamais rester sur le disque");
+    }
+
+    [Fact]
     public async Task ExportViewPng_UsesGivenViewportAndMatrix()
     {
         using var raster = MakeRaster();

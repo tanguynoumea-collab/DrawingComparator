@@ -190,6 +190,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _hasAnyDocument;
 
+    /// <summary>
+    /// Onglet actif (UAT cycle 2) : Accueil (dépôt + Reprendre, accessible à tout moment)
+    /// ou Projet (le comparateur). Bascule automatique vers Projet au premier chargement,
+    /// retour Accueil quand plus aucun document.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isHomeView = true;
+
     // ── Snackbar (item 5) ─────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -283,6 +291,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         bool firstDocument = !HasAnyDocument;
         await layer.LoadFileAsync(path);
         HasAnyDocument = BaseLayer.HasFile || RevisionLayer.HasFile;
+        if (HasAnyDocument)
+            IsHomeView = false; // un plan arrive → onglet Projet
         UpdatePagesText();
         StartAlignmentCommand.NotifyCanExecuteChanged();
         ExportCommand.NotifyCanExecuteChanged();
@@ -305,6 +315,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             return;
         // ClearFile passe aussi par ici : l'état « aucun document » doit se recalculer (design-review n°2).
         HasAnyDocument = BaseLayer.HasFile || RevisionLayer.HasFile;
+        if (!HasAnyDocument)
+            IsHomeView = true; // plus rien à comparer → retour Accueil
         StartAlignmentCommand.NotifyCanExecuteChanged();
         ExportCommand.NotifyCanExecuteChanged();
         SaveProjectCommand.NotifyCanExecuteChanged();
@@ -365,6 +377,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         float scale = Math.Min(
             (ViewportSize.Width - 2 * FitMarginPx) / size.Width,
             (ViewportSize.Height - 2 * FitMarginPx) / size.Height);
+        if (scale <= 0)
+            return; // viewport dégénéré (vue repliée) : le fit reviendra avec une vraie taille
         float tx = (ViewportSize.Width - size.Width * scale) / 2f;
         float ty = (ViewportSize.Height - size.Height * scale) / 2f;
         ViewMatrix = new SKMatrix(scale, 0, tx, 0, scale, ty, 0, 0, 1);
@@ -423,18 +437,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
             else
             {
-                // Feuille entière : rendu tuilé par bandes au DPI demandé — les rasters d'écran
-                // ne sont pas utilisés, le service rend ses propres régions PDF (SEN-11).
+                // Feuille entière : rendu tuilé au DPI demandé — les rasters d'écran ne sont
+                // pas utilisés, le service rend ses propres régions PDF (SEN-11).
                 var sheetSize = BaseLayer.HasFile ? BaseLayer.PageSizePoints : RevisionLayer.PageSizePoints;
                 var exportLayers = BuildExportLayers();
+                bool pdf = request.Format == ExportFormat.Pdf;
                 float effectiveDpi = 0f;
                 bool completed = await _dialogs.RunExportWithProgressAsync(async (progress, ct) =>
                 {
-                    effectiveDpi = await _exportService.ExportSheetPngAsync(
-                        request.OutputPath, sheetSize, request.Dpi, exportLayers, progress, ct);
+                    effectiveDpi = pdf
+                        ? await _exportService.ExportSheetPdfAsync(
+                            request.OutputPath, sheetSize, request.Dpi, exportLayers, progress, ct)
+                        : await _exportService.ExportSheetPngAsync(
+                            request.OutputPath, sheetSize, request.Dpi, exportLayers, progress, ct);
                 });
                 if (completed)
-                    ShowSnackbar($"Exporté ({effectiveDpi:0} DPI) → {Path.GetFileName(request.OutputPath)}", request.OutputPath);
+                    ShowSnackbar(
+                        $"Exporté ({(pdf ? "PDF, " : "")}{effectiveDpi:0} DPI) → {Path.GetFileName(request.OutputPath)}",
+                        request.OutputPath);
             }
         }
         catch (Exception ex)

@@ -324,10 +324,10 @@ public class AlignmentWorkflowTests
         var probe = new SKPoint(400, 400);
         var mappedBefore = before.MapPoint(probe);
 
-        vm.NudgeRevision(dxSteps: 2, dySteps: -1); // pas par défaut 0,5 mm
+        vm.NudgeRevision(dxSteps: 2, dySteps: -1); // pas par défaut 0,1 mm (UAT cycle 2)
 
         var mappedAfter = vm.AlignMatrix.MapPoint(probe);
-        float ptPerStep = 0.5f * 72f / 25.4f;
+        float ptPerStep = 0.1f * 72f / 25.4f;
         Assert.Equal(mappedBefore.X + 2 * ptPerStep, mappedAfter.X, 0.001f);
         Assert.Equal(mappedBefore.Y - 1 * ptPerStep, mappedAfter.Y, 0.001f);
 
@@ -336,10 +336,10 @@ public class AlignmentWorkflowTests
         Assert.Equal(scaleBefore, scaleAfter, 6);
         Assert.Equal(rotBefore, rotAfter, 6);
 
-        // Le pas forcé (Maj = 0,1 mm) est honoré ponctuellement.
+        // Le pas forcé (Maj = 0,01 mm) est honoré ponctuellement.
         var mapped = vm.AlignMatrix.MapPoint(probe);
-        vm.NudgeRevision(1, 0, overrideStepMm: 0.1);
-        Assert.Equal(mapped.X + 0.1f * 72f / 25.4f, vm.AlignMatrix.MapPoint(probe).X, 0.001f);
+        vm.NudgeRevision(1, 0, overrideStepMm: 0.01);
+        Assert.Equal(mapped.X + 0.01f * 72f / 25.4f, vm.AlignMatrix.MapPoint(probe).X, 0.001f);
     }
 
     [Fact]

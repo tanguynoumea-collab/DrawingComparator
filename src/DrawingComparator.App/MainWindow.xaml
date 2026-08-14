@@ -55,6 +55,35 @@
             <Setter Property="Margin" Value="16,0" />
             <Setter Property="AllowDrop" Value="True" />
         </Style>
+        <!-- Onglet de navigation Accueil/Projet (UAT cycle 2) : soulignement ambre = actif -->
+        <Style x:Key="NavTab" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Underline"
+                                Background="Transparent"
+                                Padding="12,6"
+                                BorderThickness="0,0,0,2"
+                                BorderBrush="Transparent">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Underline" Property="BorderBrush" Value="{StaticResource BrushAccent}" />
+                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <!-- Entrée de la liste « Reprendre » : bouton discret, double liseré rouge|bleu (§11.1) -->
         <Style x:Key="RecentEntryButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
@@ -92,9 +121,22 @@
 
         <ui:TitleBar Grid.Row="0" Title="DrawingComparator" ShowMaximize="True" ShowMinimize="True" />
 
-        <!-- ═══ Barre d'outils : groupe projet | calage | export ═══ -->
+        <!-- ═══ Barre d'outils : onglets | groupe projet | calage | export ═══ -->
         <Border Grid.Row="1" Background="{StaticResource BrushSurface}" Padding="16,8">
             <StackPanel Orientation="Horizontal">
+                <RadioButton Style="{StaticResource NavTab}"
+                             GroupName="Nav"
+                             Content="Accueil"
+                             IsChecked="{Binding IsHomeView}" />
+                <RadioButton Style="{StaticResource NavTab}"
+                             GroupName="Nav"
+                             Content="Projet"
+                             IsChecked="{Binding IsHomeView, Converter={StaticResource InverseBool}}"
+                             IsEnabled="{Binding HasAnyDocument}"
+                             ToolTip="Le comparatif en cours" />
+                <Border Width="1"
+                        Background="{StaticResource BrushBackground}"
+                        Margin="16,2" />
                 <Button Style="{StaticResource ToolbarButton}"
                         Margin="0"
                         Command="{Binding OpenAnyCommand}"
@@ -125,22 +167,16 @@
             </StackPanel>
         </Border>
 
-        <!-- ═══ Zone centrale ═══ -->
+        <!-- ═══ Zone centrale : page Accueil OU page Projet (onglets, UAT cycle 2) ═══ -->
         <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="288" />
-            </Grid.ColumnDefinitions>
-
-            <views:ComparatorView Grid.Column="0" DataContext="{Binding}" />
-
-            <!-- État vide : deux zones de dépôt + liste Reprendre (DESIGN_PLAN §3 + §11.1).
+            <!-- ── Page ACCUEIL : dépôt + Reprendre, accessible à tout moment, projet ouvert ou non.
                  DUPLIQUÉ VOLONTAIREMENT : les cartes BASE et RÉVISÉ sont jumelles —
                  toute retouche visuelle doit être reportée dans LES DEUX blocs. -->
-            <StackPanel Grid.Column="0"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Center"
-                        Visibility="{Binding HasAnyDocument, Converter={StaticResource BoolToCollapsed}}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          Visibility="{Binding IsHomeView, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Margin="0,32">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <Border Style="{StaticResource DropCard}"
                             BorderBrush="{StaticResource BrushTintBase}"
@@ -240,7 +276,17 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
-            </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ── Page PROJET : comparateur + panneau latéral ── -->
+            <Grid Visibility="{Binding IsHomeView, Converter={StaticResource BoolToCollapsed}}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="288" />
+            </Grid.ColumnDefinitions>
+
+            <views:ComparatorView Grid.Column="0" DataContext="{Binding}" />
 
             <!-- Snackbar (item 5) : succès = liseré Accent, échec = liseré Danger -->
             <Border Grid.Column="0"
@@ -488,23 +534,18 @@
                                                FontSize="{StaticResource FontSizeCaption}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,8,0" />
-                                    <RadioButton Content="0,05"
+                                    <RadioButton Content="0,01"
                                                  GroupName="NudgeStep"
-                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.05}"
+                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.01}"
                                                  Foreground="{StaticResource BrushTextPrimary}" />
                                     <RadioButton Content="0,1"
                                                  GroupName="NudgeStep"
                                                  IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.1}"
                                                  Margin="8,0,0,0"
                                                  Foreground="{StaticResource BrushTextPrimary}" />
-                                    <RadioButton Content="0,5"
+                                    <RadioButton Content="1"
                                                  GroupName="NudgeStep"
-                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=0.5}"
-                                                 Margin="8,0,0,0"
-                                                 Foreground="{StaticResource BrushTextPrimary}" />
-                                    <RadioButton Content="2"
-                                                 GroupName="NudgeStep"
-                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=2}"
+                                                 IsChecked="{Binding NudgeStepMm, Converter={StaticResource DoubleEquals}, ConverterParameter=1}"
                                                  Margin="8,0,0,0"
                                                  Foreground="{StaticResource BrushTextPrimary}" />
                                     <TextBlock Text="mm"
@@ -529,6 +570,7 @@
                     </Border>
                 </StackPanel>
             </ScrollViewer>
+            </Grid>
         </Grid>
 
         <!-- ═══ Barre de statut ═══ -->

@@ -89,16 +89,18 @@ public sealed class UserDialogs : IUserDialogs
         if (dialog.ShowDialog() != true)
             return null;
 
+        bool pdf = dialog.Format == ExportFormat.Pdf;
         var save = new SaveFileDialog
         {
             Title = "Exporter le comparatif",
-            Filter = "Image PNG (*.png)|*.png",
-            FileName = $"comparatif-{DateTime.Now:yyyyMMdd-HHmm}.png",
+            Filter = pdf ? "Document PDF (*.pdf)|*.pdf" : "Image PNG (*.png)|*.png",
+            FileName = $"comparatif-{DateTime.Now:yyyyMMdd-HHmm}.{(pdf ? "pdf" : "png")}",
+            DefaultExt = pdf ? ".pdf" : ".png",
         };
         if (save.ShowDialog() != true)
             return null;
 
-        return new ExportRequest(save.FileName, dialog.Dpi, dialog.CurrentViewOnly);
+        return new ExportRequest(save.FileName, dialog.Dpi, dialog.CurrentViewOnly, dialog.Format);
     }
 
     public async Task<bool> RunExportWithProgressAsync(Func<IProgress<double>, CancellationToken, Task> exportWork)

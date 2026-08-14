@@ -118,9 +118,9 @@ public sealed partial class AlignmentSession : ObservableObject
     [ObservableProperty]
     private string? _anisotropyWarning;
 
-    /// <summary>Pas de translation des flèches, en millimètres papier de la BASE (0,1 / 0,5 / 2).</summary>
+    /// <summary>Pas de translation des flèches, en millimètres papier de la BASE (0,01 / 0,1 / 1 — UAT cycle 2).</summary>
     [ObservableProperty]
-    private double _nudgeStepMm = 0.5;
+    private double _nudgeStepMm = 0.1;
 
     public bool CanNudge => HasAlignment && !IsPosingPoint;
 

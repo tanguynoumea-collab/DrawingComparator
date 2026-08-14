@@ -1,7 +1,7 @@
 <Window x:Class="DrawingComparator.App.Views.ExportDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Exporter PNG"
+        Title="Exporter"
         Width="380"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -10,27 +10,46 @@
         Foreground="{StaticResource BrushTextPrimary}"
         WindowStyle="ToolWindow">
     <StackPanel Margin="{StaticResource SpaceL}">
-        <TextBlock Text="ZONE" Style="{StaticResource PanelTitle}" Margin="0,0,0,8" />
+        <TextBlock Text="FORMAT" Style="{StaticResource PanelTitle}" Margin="0,0,0,8" />
+        <RadioButton x:Name="PngRadio"
+                     Content="PNG — image"
+                     IsChecked="True"
+                     GroupName="Format"
+                     Foreground="{StaticResource BrushTextPrimary}" />
+        <RadioButton x:Name="PdfRadio"
+                     Content="PDF — feuille entière, une page"
+                     GroupName="Format"
+                     Margin="0,4,0,0"
+                     Foreground="{StaticResource BrushTextPrimary}" />
+
+        <TextBlock Text="ZONE" Style="{StaticResource PanelTitle}" Margin="0,16,0,8" />
         <RadioButton x:Name="FullSheetRadio"
                      Content="Feuille entière"
                      IsChecked="True"
                      GroupName="Zone"
                      Foreground="{StaticResource BrushTextPrimary}" />
+        <!-- Le PDF est toujours la feuille entière : la vue courante n'a de sens qu'en image. -->
         <RadioButton x:Name="CurrentViewRadio"
                      Content="Vue courante (ce qui est à l'écran)"
                      GroupName="Zone"
                      Margin="0,4,0,0"
+                     IsEnabled="{Binding IsChecked, ElementName=PngRadio}"
                      Foreground="{StaticResource BrushTextPrimary}" />
 
         <TextBlock Text="RÉSOLUTION" Style="{StaticResource PanelTitle}" Margin="0,16,0,8" />
         <StackPanel x:Name="DpiPanel" IsEnabled="{Binding IsChecked, ElementName=FullSheetRadio}">
             <RadioButton x:Name="Dpi150Radio"
                          Content="150 DPI — partage et revue"
-                         IsChecked="True"
                          GroupName="Dpi"
                          Foreground="{StaticResource BrushTextPrimary}" />
             <RadioButton x:Name="Dpi300Radio"
                          Content="300 DPI — archivage haute définition"
+                         IsChecked="True"
+                         GroupName="Dpi"
+                         Margin="0,4,0,0"
+                         Foreground="{StaticResource BrushTextPrimary}" />
+            <RadioButton x:Name="Dpi600Radio"
+                         Content="600 DPI — impression fine (PDF recommandé)"
                          GroupName="Dpi"
                          Margin="0,4,0,0"
                          Foreground="{StaticResource BrushTextPrimary}" />

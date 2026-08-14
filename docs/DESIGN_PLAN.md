@@ -236,8 +236,8 @@ pose de points), le **panneau Calage** devient l'instrument de retouche :
 │ ✓ calé   résiduel 0,4 mm  │  ← résiduel : § 11.4
 │ é=0.998  θ=+0.4°          │
 │ AJUSTER (flèches)         │
-│ pas [0,05][0,1][0,5][2] mm│  ← segmented, valeur active en ambre (0,05 ajouté en UAT cycle 2)
-│ Maj = pas ↓   Ctrl = pas ↑ │  ← Caption (Maj = 0,05)
+│ pas  [0,01] [0,1] [1] mm  │  ← segmented 3 pas, valeur active en ambre (UAT cycle 2 : plus fin)
+│ Maj = 0,01   Ctrl = 1     │  ← Caption
 │ [Réinitialiser]           │
 ```
 
@@ -347,6 +347,16 @@ chrome seul — le canvas est déjà light par construction (multiply sur fond b
 - **Accessoire retiré (Chanel)** : la vignette-aperçu du canvas dans les entrées Reprendre (coût de
   génération/stockage pour un gain faible — le double liseré + noms de fichiers identifient déjà) ;
   le badge « NOUVEAU » sur les fonctions du cycle 2 (l'app n'a qu'un utilisateur, il sait ce qui est neuf).
+
+### 11.11 bis — Retouches UAT cycle 2 (validées en usage réel)
+
+- **Onglets Accueil / Projet** dans la barre d'outils (soulignement ambre = actif) : l'Accueil
+  (dépôt + Reprendre) reste accessible projet ouvert — ouvrir un récent bascule vers Projet ;
+  Projet désactivé tant qu'aucun document ; retour Accueil automatique quand tout est fermé.
+- **Pas d'ajustement** : 3 pas, plus fins — 0,01 / 0,1 / 1 mm (défaut 0,1 ; Maj = 0,01, Ctrl = 1).
+- **Export** : format PNG **ou PDF** (une page à l'emprise de la feuille, rasters embarqués,
+  tuilé au fil de l'eau — 600 DPI possible même sur A0) + résolution 600 DPI ajoutée
+  (« impression fine ») ; la « vue courante » reste réservée au PNG.
 
 ### 11.12 Journal des choix rejetés (delta)
 

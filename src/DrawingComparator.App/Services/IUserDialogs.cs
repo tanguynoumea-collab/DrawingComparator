@@ -1,7 +1,15 @@
 namespace DrawingComparator.App.Services;
 
-/// <summary>Zone exportée : la feuille entière du plan de base, ou la vue courante à l'écran.</summary>
-public sealed record ExportRequest(string OutputPath, float Dpi, bool CurrentViewOnly);
+public enum ExportFormat
+{
+    Png,
+    Pdf,
+}
+
+/// <summary>Zone exportée : la feuille entière du plan de base, ou la vue courante à l'écran.
+/// Le PDF (UAT cycle 2) est toujours la feuille entière — rasters embarqués au DPI choisi.</summary>
+public sealed record ExportRequest(string OutputPath, float Dpi, bool CurrentViewOnly,
+    ExportFormat Format = ExportFormat.Png);
 
 public interface IUserDialogs
 {

@@ -327,6 +327,51 @@ public class MainViewModelTests
         Assert.Empty(recents.Items);
     }
 
+    // ── Onglets Accueil / Projet (UAT cycle 2) ────────────────────────────────
+
+    [Fact]
+    public async Task Tabs_SwitchToProjectOnLoad_BackToHomeWhenEmpty()
+    {
+        var (vm, _, _, _) = MakeVm();
+        Assert.True(vm.IsHomeView);
+
+        await vm.LoadIntoLayerAsync(vm.BaseLayer, "plan.pdf");
+        Assert.False(vm.IsHomeView); // un plan chargé → onglet Projet
+
+        // L'utilisateur peut revenir à l'Accueil sans fermer le projet (liste Reprendre).
+        vm.IsHomeView = true;
+        Assert.True(vm.HasAnyDocument);
+
+        // Retirer le dernier plan → retour Accueil forcé.
+        vm.IsHomeView = false;
+        vm.BaseLayer.ClearFileCommand.Execute(null);
+        Assert.True(vm.IsHomeView);
+        Assert.False(vm.HasAnyDocument);
+    }
+
+    [Fact]
+    public async Task ExportPdf_FromVm_WritesFile_ShowsPdfSnackbar()
+    {
+        var (vm, _, dialogs, _) = MakeVm();
+        await vm.LoadIntoLayerAsync(vm.BaseLayer, "base.pdf");
+        string path = Path.Combine(Path.GetTempPath(), $"dc-test-{Guid.NewGuid():N}.pdf");
+        dialogs.NextExportRequest = new ExportRequest(path, 600, CurrentViewOnly: false, ExportFormat.Pdf);
+
+        try
+        {
+            await vm.ExportCommand.ExecuteAsync(null);
+
+            Assert.True(File.Exists(path));
+            Assert.NotNull(vm.SnackbarMessage);
+            Assert.Contains("PDF", vm.SnackbarMessage);
+            Assert.Contains("600", vm.SnackbarMessage);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     // ── Heuristique « page semble vide » (item 9) ─────────────────────────────
 
     [Fact]

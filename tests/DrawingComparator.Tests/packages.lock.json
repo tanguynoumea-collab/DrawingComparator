@@ -31,9 +31,9 @@
       },
       "xunit.runner.visualstudio": {
         "type": "Direct",
-        "requested": "[2.5.3, )",
-        "resolved": "2.5.3",
-        "contentHash": "HFFL6O+QLEOfs555SqHii48ovVa4CqGYanY+B32BjLpPptdE+wEJmCFNXlLHdEOD5LYeayb9EroaUpydGpcybg=="
+        "requested": "[3.1.5, )",
+        "resolved": "3.1.5",
+        "contentHash": "tKi7dSTwP4m5m9eXPM2Ime4Kn7xNf4x4zT9sdLO/G4hZVnQCRiMTWoSZqI/pYTVeI27oPPqHBKYI/DjJ9GsYgA=="
       },
       "bblanchon.PDFium.Linux": {
         "type": "Transitive",
@@ -1098,7 +1098,7 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "DrawingComparator.Core": "[0.1.0, )",
+          "DrawingComparator.Core": "[0.2.0, )",
           "Microsoft.Extensions.DependencyInjection": "[8.0.1, )",
           "WPF-UI": "[4.3.0, )"
         }
